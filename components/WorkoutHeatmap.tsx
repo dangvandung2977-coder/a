@@ -1,7 +1,8 @@
 // components/WorkoutHeatmap.tsx
 'use client';
 
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { useDialogFocus } from '@/components/useDialogFocus';
 import {
   Dumbbell,
   X,
@@ -27,8 +28,8 @@ interface WorkoutHeatmapProps {
 type TimeRangeMode = '1month' | '2months' | 'year' | 'all';
 
 const MODE_OPTIONS: { value: TimeRangeMode; label: string }[] = [
-  { value: '1month', label: '1T' },
-  { value: '2months', label: '2T' },
+  { value: '1month', label: '1 tháng' },
+  { value: '2months', label: '2 tháng' },
   { value: 'year', label: 'Năm' },
   { value: 'all', label: 'Tất cả' },
 ];
@@ -37,6 +38,9 @@ export default function WorkoutHeatmap({ activityData = [] }: WorkoutHeatmapProp
   const [mode, setMode] = useState<TimeRangeMode>('1month');
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [selectedDay, setSelectedDay] = useState<DayActivity | null>(null);
+
+  const closeDetails = useCallback(() => setSelectedDay(null), []);
+  useDialogFocus(Boolean(selectedDay), closeDetails);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -101,7 +105,7 @@ export default function WorkoutHeatmap({ activityData = [] }: WorkoutHeatmapProp
     alignedStart.setDate(alignedStart.getDate() + diffToMonday);
 
     const weeksArr: DayActivity[][] = [];
-    let curr = new Date(alignedStart);
+    const curr = new Date(alignedStart);
 
     while (curr <= endDate || curr.getDay() !== 1) {
       const currentWeek: DayActivity[] = [];
@@ -154,7 +158,7 @@ export default function WorkoutHeatmap({ activityData = [] }: WorkoutHeatmapProp
     const monthPrefix = todayStr.substring(0, 7);
 
     let streak = 0;
-    let check = new Date(today);
+    const check = new Date(today);
 
     const todayAct = dataMap.get(todayStr);
     if (!todayAct || todayAct.level === 0) {
@@ -183,21 +187,17 @@ export default function WorkoutHeatmap({ activityData = [] }: WorkoutHeatmapProp
   const daysLabel = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
   const todayKey = new Date().toISOString().split('T')[0];
   const isCompactMode = mode === '1month' || mode === '2months';
-  const cellSize = isCompactMode ? 'w-[18px] h-[18px]' : 'w-[13px] h-[13px]';
-  const labelHeight = isCompactMode ? 'h-[18px] leading-[18px]' : 'h-[13px] leading-[13px]';
+  const cellSize = isCompactMode ? 'w-6 h-6' : 'w-[13px] h-[13px]';
+  const labelHeight = isCompactMode ? 'h-6 leading-6' : 'h-[13px] leading-[13px]';
 
   return (
     <div className="w-full min-w-0 max-w-full overflow-hidden select-none">
       {/* STATS */}
-      <div className="grid grid-cols-2 gap-2 mb-4">
+      <div className="heatmap-stats grid grid-cols-2 gap-2 mb-4">
         <div className="relative overflow-hidden rounded-2xl bg-zinc-950 border border-zinc-800 px-3.5 py-3">
-          <div
-            className="pointer-events-none absolute -right-6 -top-6 w-16 h-16 rounded-full bg-orange-500/15 blur-2xl"
-            aria-hidden="true"
-          />
           <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.15em] text-zinc-500">
             <Flame className="w-3.5 h-3.5 text-orange-400" aria-hidden="true" />
-            Streak
+            Chuỗi ngày tập
           </div>
           <p className="mt-1 flex items-baseline gap-1">
             <span className="text-2xl font-black text-white tabular-nums">{currentStreak}</span>
@@ -205,10 +205,6 @@ export default function WorkoutHeatmap({ activityData = [] }: WorkoutHeatmapProp
           </p>
         </div>
         <div className="relative overflow-hidden rounded-2xl bg-zinc-950 border border-zinc-800 px-3.5 py-3">
-          <div
-            className="pointer-events-none absolute -right-6 -top-6 w-16 h-16 rounded-full bg-lime-400/15 blur-2xl"
-            aria-hidden="true"
-          />
           <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.15em] text-zinc-500">
             <Dumbbell className="w-3.5 h-3.5 text-lime-400" aria-hidden="true" />
             Tháng này
@@ -221,8 +217,8 @@ export default function WorkoutHeatmap({ activityData = [] }: WorkoutHeatmapProp
       </div>
 
       {/* ĐIỀU HƯỚNG & CHẾ ĐỘ */}
-      <div className="flex items-center justify-between gap-2 mb-3">
-        <div className="flex items-center gap-1 min-w-0">
+      <div className="heatmap-controls flex items-center justify-between gap-2 mb-3">
+        <div className="heatmap-date flex items-center gap-1 min-w-0">
           {mode !== 'all' && (
             <button
               type="button"
@@ -249,9 +245,9 @@ export default function WorkoutHeatmap({ activityData = [] }: WorkoutHeatmapProp
         </div>
 
         <div
-          role="tablist"
+          role="group"
           aria-label="Chọn khoảng thời gian"
-          className="flex shrink-0 bg-zinc-950 border border-zinc-800 p-0.5 rounded-xl"
+          className="heatmap-ranges flex shrink-0 bg-zinc-950 border border-zinc-800 p-0.5 rounded-xl"
         >
           {MODE_OPTIONS.map((opt) => {
             const active = mode === opt.value;
@@ -259,8 +255,8 @@ export default function WorkoutHeatmap({ activityData = [] }: WorkoutHeatmapProp
               <button
                 key={opt.value}
                 type="button"
-                role="tab"
-                aria-selected={active}
+                aria-pressed={active}
+                data-active={active}
                 onClick={() => setMode(opt.value)}
                 className={`px-2.5 py-1 rounded-[10px] text-[10px] font-bold uppercase tracking-wide transition-all ${
                   active ? 'bg-lime-400 text-zinc-950' : 'text-zinc-500 hover:text-zinc-200'
@@ -277,11 +273,14 @@ export default function WorkoutHeatmap({ activityData = [] }: WorkoutHeatmapProp
       <div className="w-full min-w-0 max-w-full overflow-hidden rounded-2xl bg-zinc-950 border border-zinc-800 p-3">
         <div
           ref={scrollRef}
+          tabIndex={0}
+          role="region"
+          aria-label="Lịch hoạt động; dùng phím mũi tên để cuộn"
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
-          className={`w-full overflow-x-auto overscroll-x-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden ${
+          className={`heatmap-calendar w-full overflow-x-auto overscroll-x-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden ${
             isDragging ? 'cursor-grabbing' : 'cursor-grab'
           }`}
         >
@@ -299,7 +298,7 @@ export default function WorkoutHeatmap({ activityData = [] }: WorkoutHeatmapProp
             </div>
 
             {/* Các ô vuông */}
-            <div className="flex gap-1">
+            <div className="heatmap-grid flex gap-1">
               {gridWeeks.map((week, wIdx) => (
                 <div key={wIdx} className="flex flex-col gap-1">
                   {week.map((day) => {
@@ -318,6 +317,8 @@ export default function WorkoutHeatmap({ activityData = [] }: WorkoutHeatmapProp
                       <button
                         key={day.date}
                         type="button"
+                        tabIndex={day.level > 0 ? 0 : -1}
+                        aria-disabled={day.level === 0}
                         onClick={() => {
                           if (day.level > 0) setSelectedDay(day);
                         }}
@@ -353,7 +354,7 @@ export default function WorkoutHeatmap({ activityData = [] }: WorkoutHeatmapProp
       {/* MODAL CHI TIẾT */}
       {selectedDay && (
         <div
-          className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+          className="heatmap-modal-overlay fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
           onClick={() => setSelectedDay(null)}
         >
           <div
@@ -361,9 +362,9 @@ export default function WorkoutHeatmap({ activityData = [] }: WorkoutHeatmapProp
             aria-modal="true"
             aria-labelledby="heatmap-day-title"
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-sm bg-zinc-950 border border-zinc-800 rounded-t-[2rem] sm:rounded-[2rem] p-5 shadow-2xl"
+            className="heatmap-modal w-full max-w-sm bg-zinc-950 border border-zinc-800 rounded-t-[2rem] sm:rounded-[2rem] p-5 shadow-2xl"
           >
-            <div className="w-10 h-1 rounded-full bg-zinc-800 mx-auto mb-4 sm:hidden" aria-hidden="true" />
+
 
             <div className="flex justify-between items-start mb-4">
               <div className="flex items-center gap-3">

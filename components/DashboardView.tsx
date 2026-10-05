@@ -1,7 +1,9 @@
 // components/DashboardView.tsx
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import AppBrand from '@/components/AppBrand';
+import { useDialogFocus } from '@/components/useDialogFocus';
 import { supabase } from '@/lib/supabaseClient';
 import {
   Plus,
@@ -19,6 +21,7 @@ import {
   Check,
   Loader2,
   Zap,
+  AlertCircle,
 } from 'lucide-react';
 import WorkoutHeatmap, { DayActivity } from '@/components/WorkoutHeatmap';
 
@@ -32,9 +35,18 @@ interface SelectedExerciseItem {
   target_reps: number[];
 }
 
+interface Routine { id: string; name: string; }
+interface LibraryExercise {
+  id: string;
+  name: string;
+  default_sets: number;
+  default_min_rep: number;
+  default_max_rep: number;
+}
+
 export default function DashboardView({ onStartWorkout }: { onStartWorkout: (routineId: string, routineName: string) => void }) {
-  const [routines, setRoutines] = useState<any[]>([]);
-  const [libraryExercises, setLibraryExercises] = useState<any[]>([]);
+  const [routines, setRoutines] = useState<Routine[]>([]);
+  const [libraryExercises, setLibraryExercises] = useState<LibraryExercise[]>([]);
   const [activityLogs, setActivityLogs] = useState<DayActivity[]>([]);
 
   // State Modal (Tạo & Sửa)
@@ -44,49 +56,79 @@ export default function DashboardView({ onStartWorkout }: { onStartWorkout: (rou
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedExercises, setSelectedExercises] = useState<SelectedExerciseItem[]>([]);
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    loadRoutinesAndLogs();
-    loadLibrary();
-  }, []);
+  const [loading, setLoading] = useState(true);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [modalError, setModalError] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [openingRoutineId, setOpeningRoutineId] = useState<string | null>(null);
+  const closeDialog = useCallback(() => {
+    if (saving || deleting) return;
+    setShowModal(false);
+    setDeleteTarget(null);
+  }, [saving, deleting]);
+  useDialogFocus(showModal || Boolean(deleteTarget), closeDialog);
 
   // TẢI LỊCH TẬP & NHẬT KÝ ĐỂ THẮP SÁNG HEATMAP
-  const loadRoutinesAndLogs = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+  const loadRoutinesAndLogs = useCallback(async () => {
+    try {
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
+      if (!user) { setNotice('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.'); return; }
+      setLoading(true);
+      setNotice(null);
 
-    // 1. Tải danh sách lịch tập
-    const { data } = await supabase
-      .from('workout_routines')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
-    if (data) setRoutines(data);
+      // 1. Tải danh sách lịch tập
+      const { data, error: routineError } = await supabase
+        .from('workout_routines')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+      if (data) setRoutines(data);
+      if (routineError) throw routineError;
 
-    // 2. Tải nhật ký các ngày đã tập từ Database
-    const { data: logs } = await supabase
-      .from('workout_logs')
-      .select('*')
-      .eq('user_id', user.id);
+      // 2. Tải nhật ký các ngày đã tập từ Database
+      const { data: logs, error: logsError } = await supabase
+        .from('workout_logs')
+        .select('*')
+        .eq('user_id', user.id);
+      if (logsError) throw logsError;
 
-    if (logs && logs.length > 0) {
-      setActivityLogs(
-        logs.map((l) => ({
-          date: l.workout_date,
-          level: l.level as 0 | 1 | 2,
-          summary: l.summary,
-          routineName: l.routine_name,
-        }))
-      );
+      if (logs && logs.length > 0) {
+        setActivityLogs(
+          logs.map((l) => ({
+            date: l.workout_date,
+            level: l.level as 0 | 1 | 2,
+            summary: l.summary,
+            routineName: l.routine_name,
+          }))
+        );
+      }
+    } catch {
+      setNotice('Không thể tải dữ liệu. Kiểm tra kết nối và thử lại.');
+    } finally {
+      setLoading(false);
     }
-  };
+  }, []);
 
-  const loadLibrary = async () => {
-    const { data } = await supabase.from('exercises_library').select('*');
-    if (data) setLibraryExercises(data);
-  };
+  const loadLibrary = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.from('exercises_library').select('*');
+      if (error) throw error;
+      if (data) setLibraryExercises(data);
+    } catch { setNotice('Không thể tải thư viện bài tập. Vui lòng thử lại.'); }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) { loadRoutinesAndLogs(); loadLibrary(); }
+    });
+    return () => { cancelled = true; };
+  }, [loadRoutinesAndLogs, loadLibrary]);
 
   const handleOpenCreateModal = () => {
+    setModalError(null);
     setEditingRoutineId(null);
     setRoutineName('');
     setSelectedExercises([]);
@@ -94,67 +136,88 @@ export default function DashboardView({ onStartWorkout }: { onStartWorkout: (rou
     setShowModal(true);
   };
 
-  const handleOpenEditModal = async (routine: any) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+  const handleOpenEditModal = async (routine: Routine) => {
+    if (openingRoutineId) return;
+    setOpeningRoutineId(routine.id);
+    setModalError(null);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
 
-    setEditingRoutineId(routine.id);
-    setRoutineName(routine.name);
-    setSearchQuery('');
+      setEditingRoutineId(routine.id);
+      setRoutineName(routine.name);
+      setSearchQuery('');
 
-    const { data: routineExList } = await supabase
-      .from('routine_exercises')
-      .select('exercise_id, order_index')
-      .eq('routine_id', routine.id)
-      .order('order_index', { ascending: true });
+      const { data: routineExList, error: routineError } = await supabase
+        .from('routine_exercises')
+        .select('exercise_id, order_index')
+        .eq('routine_id', routine.id)
+        .order('order_index', { ascending: true });
+      if (routineError) throw routineError;
 
-    if (routineExList && routineExList.length > 0) {
-      const exerciseIds = routineExList.map((item) => item.exercise_id);
+      if (routineExList && routineExList.length > 0) {
+        const exerciseIds = routineExList.map((item) => item.exercise_id);
 
-      const { data: exData } = await supabase.from('exercises_library').select('*').in('id', exerciseIds);
-      const { data: stateData } = await supabase.from('user_exercise_state').select('*').eq('user_id', user.id).in('exercise_id', exerciseIds);
+        const { data: exData, error: libraryError } = await supabase.from('exercises_library').select('*').in('id', exerciseIds);
+        if (libraryError) throw libraryError;
+        const { data: stateData, error: stateError } = await supabase.from('user_exercise_state').select('*').eq('user_id', user.id).in('exercise_id', exerciseIds);
+        if (stateError) throw stateError;
 
-      const mapped: SelectedExerciseItem[] = routineExList.map((item) => {
-        const ex = exData?.find((e) => e.id === item.exercise_id);
-        const state = stateData?.find((s) => s.exercise_id === item.exercise_id);
+        const mapped: SelectedExerciseItem[] = routineExList.map((item) => {
+          const ex = exData?.find((e) => e.id === item.exercise_id);
+          const state = stateData?.find((s) => s.exercise_id === item.exercise_id);
 
-        const setsCount = state?.target_reps?.length || ex?.default_sets || 3;
-        const minRep = ex?.default_min_rep || 8;
-        const currentTargetReps =
-          state?.target_reps && state.target_reps.length > 0
-            ? state.target_reps
-            : Array(setsCount).fill(minRep);
+          const setsCount = state?.target_reps?.length || ex?.default_sets || 3;
+          const minRep = ex?.default_min_rep || 8;
+          const currentTargetReps =
+            state?.target_reps && state.target_reps.length > 0
+              ? state.target_reps
+              : Array(setsCount).fill(minRep);
 
-        return {
-          exerciseId: item.exercise_id,
-          name: ex?.name || 'Bài tập',
-          default_sets: setsCount,
-          default_min_rep: minRep,
-          default_max_rep: ex?.default_max_rep || 12,
-          weight: state?.current_weight || 20,
-          target_reps: currentTargetReps,
-        };
-      });
+          return {
+            exerciseId: item.exercise_id,
+            name: ex?.name || 'Bài tập',
+            default_sets: setsCount,
+            default_min_rep: minRep,
+            default_max_rep: ex?.default_max_rep || 12,
+            weight: state?.current_weight || 20,
+            target_reps: currentTargetReps,
+          };
+        });
 
-      setSelectedExercises(mapped);
-    } else {
-      setSelectedExercises([]);
-    }
+        setSelectedExercises(mapped);
+      } else {
+        setSelectedExercises([]);
+      }
 
-    setShowModal(true);
+      setShowModal(true);
+    } catch {
+      setNotice('Không thể mở giáo án. Vui lòng thử lại.');
+    } finally { setOpeningRoutineId(null); }
   };
 
   const handleDeleteRoutine = async (routineId: string, routineName: string) => {
-    if (!confirm(`Bạn có chắc chắn muốn xóa lịch "${routineName}" không?`)) return;
-
-    await supabase.from('routine_exercises').delete().eq('routine_id', routineId);
-    const { error } = await supabase.from('workout_routines').delete().eq('id', routineId);
-
-    if (error) alert(`Lỗi: ${error.message}`);
-    else loadRoutinesAndLogs();
+    setModalError(null);
+    setDeleteTarget({ id: routineId, name: routineName });
   };
 
-  const handleAddExercise = (ex: any) => {
+  const confirmDelete = async () => {
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
+    try {
+      const { error: exercisesError } = await supabase.from('routine_exercises').delete().eq('routine_id', deleteTarget.id);
+      if (exercisesError) throw exercisesError;
+      const { error } = await supabase.from('workout_routines').delete().eq('id', deleteTarget.id);
+      if (error) throw error;
+      setDeleteTarget(null);
+      await loadRoutinesAndLogs();
+    } catch {
+      setModalError('Không thể xóa lịch tập. Vui lòng thử lại.');
+    } finally { setDeleting(false); }
+  };
+
+  const handleAddExercise = (ex: LibraryExercise) => {
+    setModalError(null);
     if (selectedExercises.find((item) => item.exerciseId === ex.id)) return;
 
     const sets = ex.default_sets || 3;
@@ -204,61 +267,73 @@ export default function DashboardView({ onStartWorkout }: { onStartWorkout: (rou
   };
 
   const handleSaveRoutine = async () => {
+    if (saving) return;
+    setModalError(null);
     if (!routineName.trim() || selectedExercises.length === 0) {
-      alert('Vui lòng nhập tên lịch và thêm ít nhất 1 bài tập!');
+      setModalError('Vui lòng nhập tên lịch và thêm ít nhất một bài tập.');
       return;
     }
 
     setSaving(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      setSaving(false);
-      return alert('Chưa đăng nhập!');
-    }
-
-    let routineId = editingRoutineId;
-
-    if (editingRoutineId) {
-      await supabase.from('workout_routines').update({ name: routineName }).eq('id', editingRoutineId);
-      await supabase.from('routine_exercises').delete().eq('routine_id', editingRoutineId);
-    } else {
-      const { data: newR, error: rError } = await supabase
-        .from('workout_routines')
-        .insert({ user_id: user.id, name: routineName })
-        .select()
-        .single();
-
-      if (rError || !newR) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
         setSaving(false);
-        return alert(`Lỗi: ${rError?.message}`);
+        setModalError('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+        return;
       }
-      routineId = newR.id;
-    }
 
-    for (let i = 0; i < selectedExercises.length; i++) {
-      const item = selectedExercises[i];
-      await supabase.from('routine_exercises').insert({
-        routine_id: routineId,
-        exercise_id: item.exerciseId,
-        order_index: i + 1,
-      });
+      let routineId = editingRoutineId;
 
-      await supabase.from('user_exercise_state').upsert(
-        {
-          user_id: user.id,
+      if (editingRoutineId) {
+        const { error: updateError } = await supabase.from('workout_routines').update({ name: routineName }).eq('id', editingRoutineId);
+        if (updateError) throw updateError;
+        const { error: removeError } = await supabase.from('routine_exercises').delete().eq('routine_id', editingRoutineId);
+        if (removeError) throw removeError;
+      } else {
+        const { data: newR, error: rError } = await supabase
+          .from('workout_routines')
+          .insert({ user_id: user.id, name: routineName })
+          .select()
+          .single();
+
+        if (rError || !newR) {
+          setSaving(false);
+          setModalError('Không thể tạo lịch tập. Vui lòng thử lại.');
+          return;
+        }
+        routineId = newR.id;
+      }
+
+      for (let i = 0; i < selectedExercises.length; i++) {
+        const item = selectedExercises[i];
+        const { error: exerciseError } = await supabase.from('routine_exercises').insert({
+          routine_id: routineId,
           exercise_id: item.exerciseId,
-          current_weight: item.weight,
-          target_reps: item.target_reps,
-          plateau_count: 0,
-          is_calibrating: false,
-        },
-        { onConflict: 'user_id, exercise_id' }
-      );
-    }
+          order_index: i + 1,
+        });
+        if (exerciseError) throw exerciseError;
 
-    setSaving(false);
-    setShowModal(false);
-    loadRoutinesAndLogs();
+        const { error: stateError } = await supabase.from('user_exercise_state').upsert(
+          {
+            user_id: user.id,
+            exercise_id: item.exerciseId,
+            current_weight: item.weight,
+            target_reps: item.target_reps,
+            plateau_count: 0,
+            is_calibrating: false,
+          },
+          { onConflict: 'user_id, exercise_id' }
+        );
+        if (stateError) throw stateError;
+      }
+
+      setSaving(false);
+      setShowModal(false);
+      loadRoutinesAndLogs();
+    } catch {
+      setModalError('Không thể lưu lịch tập. Vui lòng thử lại.');
+    } finally { setSaving(false); }
   };
 
   // ===== Giá trị hiển thị (chỉ dùng cho UI, không ảnh hưởng logic) =====
@@ -278,57 +353,56 @@ export default function DashboardView({ onStartWorkout }: { onStartWorkout: (rou
   );
 
   return (
-    <main className="relative min-h-screen bg-zinc-950 text-white overflow-x-hidden">
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute -top-40 left-1/2 -translate-x-1/2 w-[32rem] h-[32rem] rounded-full bg-lime-400/10 blur-3xl"
-      />
-
-      <div className="relative max-w-md mx-auto px-5 pt-6 pb-36">
-        {/* HEADER */}
-        <header className="flex items-start justify-between mb-7">
+    <main className="app-screen dashboard-screen">
+      <div className="app-topbar">
+        <AppBrand />
+        <div className="app-topbar-actions">
+          <span className="app-topbar-label">Không ngừng tiến bộ.</span>
+          <button type="button" onClick={async () => {
+            const { error } = await supabase.auth.signOut();
+            if (error) setNotice('Không thể đăng xuất. Vui lòng thử lại.');
+            else window.location.reload();
+          }} className="w-10 h-10 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center"
+            aria-label="Đăng xuất" title="Đăng xuất"><LogOut size={17} aria-hidden="true" /></button>
+        </div>
+      </div>
+      <div className="dashboard-shell">
+        <header className="dashboard-heading">
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-lime-400 mb-1.5 capitalize">
-              {todayLabel}
-            </p>
-            <h1 className="text-[28px] leading-[1.05] font-black tracking-tight text-balance">
-              Hôm nay bạn
-              <br />
-              tập gì<span className="text-lime-400">?</span>
-            </h1>
+            <p className="dashboard-date capitalize">{todayLabel}</p>
+            <h1>Hôm nay bạn tập gì<span className="text-lime-400">?</span></h1>
+            <p>Mỗi buổi tập là một bước tiến. Bắt đầu với giáo án của bạn.</p>
           </div>
-          <button
-            onClick={() => supabase.auth.signOut().then(() => window.location.reload())}
-            className="w-11 h-11 rounded-2xl bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-700 flex items-center justify-center active:scale-95 transition-all"
-            aria-label="Đăng xuất"
-            title="Đăng xuất"
-          >
-            <LogOut className="w-4 h-4" aria-hidden="true" />
+          <button type="button" onClick={handleOpenCreateModal} className="dashboard-create">
+            <Plus size={18} aria-hidden="true" />Tạo lịch tập mới
           </button>
         </header>
-
+        {notice && <div className="app-feedback" role="status"><AlertCircle size={16} aria-hidden="true" /><span>{notice}</span>
+          <button type="button" className="ml-auto text-lime-400 shrink-0" onClick={() => { loadRoutinesAndLogs(); loadLibrary(); }}>Thử lại</button>
+        </div>}
         {/* STATS */}
-        <section aria-label="Thống kê" className="grid grid-cols-3 gap-2.5 mb-5">
-          <StatTile icon={<Flame className="w-4 h-4" />} value={sessionsThisMonth} label="Buổi tháng này" highlight />
-          <StatTile icon={<CalendarDays className="w-4 h-4" />} value={totalSessions} label="Tổng buổi" />
-          <StatTile icon={<Layers className="w-4 h-4" />} value={routines.length} label="Lịch tập" />
+        <section aria-label="Thống kê" className="dashboard-stats grid grid-cols-3">
+          <StatTile icon={<Flame className="w-4 h-4" />} value={loading ? '—' : sessionsThisMonth} label="Buổi tháng này" highlight />
+          <StatTile icon={<CalendarDays className="w-4 h-4" />} value={loading ? '—' : totalSessions} label="Tổng buổi" />
+          <StatTile icon={<Layers className="w-4 h-4" />} value={loading ? '—' : routines.length} label="Lịch tập" />
         </section>
 
+        <div className="dashboard-grid">
         {/* HEATMAP */}
-        <section aria-labelledby="heatmap-title" className="bg-zinc-900/70 border border-zinc-800 rounded-3xl p-4 mb-8">
+        <section aria-labelledby="heatmap-title" className="dashboard-activity border border-zinc-800 rounded-3xl">
           <div className="flex items-center justify-between mb-3">
             <h2 id="heatmap-title" className="text-xs font-bold uppercase tracking-[0.15em] text-zinc-400">
               Độ chăm chỉ
             </h2>
             <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-lime-400">
-              <Zap className="w-3 h-3" aria-hidden="true" /> Consistency
+              <Zap className="w-3 h-3" aria-hidden="true" /> Đều đặn mỗi ngày
             </span>
           </div>
           <WorkoutHeatmap activityData={activityLogs} />
         </section>
 
         {/* DANH SÁCH LỊCH TẬP */}
-        <section aria-labelledby="routines-title">
+        <section aria-labelledby="routines-title" className="dashboard-routines" aria-busy={loading}>
           <div className="flex items-end justify-between mb-3">
             <h2 id="routines-title" className="text-lg font-black tracking-tight">
               Giáo án của bạn
@@ -338,15 +412,16 @@ export default function DashboardView({ onStartWorkout }: { onStartWorkout: (rou
             </span>
           </div>
 
-          <ul className="flex flex-col gap-3">
-            {routines.map((routine, i) => (
+          <ul className="routine-list flex flex-col gap-3">
+            {loading && [0, 1, 2].map((item) => <li key={`loading-${item}`} className="h-32 rounded-3xl bg-zinc-900 border border-zinc-800 animate-pulse" aria-hidden="true" />)}
+            {!loading && routines.map((routine, i) => (
               <li
                 key={routine.id}
-                className="group relative bg-zinc-900 border border-zinc-800 hover:border-zinc-700 rounded-3xl p-4 transition-colors"
+                className="routine-card group relative border border-zinc-800 hover:border-zinc-700 rounded-3xl transition-colors"
               >
                 <div className="flex items-center gap-3.5">
                   <div className="w-12 h-12 shrink-0 rounded-2xl bg-zinc-950 border border-zinc-800 flex flex-col items-center justify-center">
-                    <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-500 leading-none">Day</span>
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-500 leading-none">Lịch</span>
                     <span className="text-lg font-black tabular-nums leading-none mt-0.5">
                       {String(i + 1).padStart(2, '0')}
                     </span>
@@ -371,10 +446,11 @@ export default function DashboardView({ onStartWorkout }: { onStartWorkout: (rou
 
                 <div className="flex items-center gap-2 mt-3.5 pt-3.5 border-t border-zinc-800/80">
                   <button
+                    disabled={Boolean(openingRoutineId)}
                     onClick={() => handleOpenEditModal(routine)}
                     className="flex-1 inline-flex items-center justify-center gap-1.5 py-2 rounded-xl bg-zinc-950 border border-zinc-800 text-xs font-semibold text-zinc-300 hover:text-white hover:border-zinc-700 active:scale-[0.98] transition-all"
                   >
-                    <Pencil className="w-3.5 h-3.5" aria-hidden="true" /> Sửa lịch & Reps
+                    {openingRoutineId === routine.id ? <><Loader2 size={14} className="animate-spin" aria-hidden="true" />Đang mở...</> : <><Pencil className="w-3.5 h-3.5" aria-hidden="true" />Chỉnh sửa giáo án</>}
                   </button>
                   <button
                     onClick={() => handleDeleteRoutine(routine.id, routine.name)}
@@ -389,22 +465,23 @@ export default function DashboardView({ onStartWorkout }: { onStartWorkout: (rou
             ))}
           </ul>
 
-          {routines.length === 0 && (
-            <div className="flex flex-col items-center text-center py-12 px-6 bg-zinc-900/40 border border-dashed border-zinc-800 rounded-3xl">
+          {!loading && !notice && routines.length === 0 && (
+            <div className="dashboard-empty flex flex-col items-center text-center border border-dashed rounded-3xl">
               <div className="w-14 h-14 rounded-2xl bg-lime-400/10 border border-lime-400/20 text-lime-400 flex items-center justify-center mb-4">
                 <Dumbbell className="w-6 h-6" aria-hidden="true" />
               </div>
               <p className="font-bold text-white mb-1">Chưa có lịch tập nào</p>
               <p className="text-sm text-zinc-500 text-pretty">
-                Bấm nút bên dưới để tạo giáo án đầu tiên của bạn.
+                Tạo giáo án đầu tiên và bắt đầu theo dõi tiến bộ của bạn.
               </p>
             </div>
           )}
         </section>
+        </div>
       </div>
 
       {/* NÚT TẠO LỊCH MỚI */}
-      <div className="fixed bottom-0 inset-x-0 z-30 pointer-events-none">
+      <div className="dashboard-mobile-create fixed bottom-0 inset-x-0 z-30 pointer-events-none">
         <div className="max-w-md mx-auto px-5 pb-6 pt-10 bg-gradient-to-t from-zinc-950 via-zinc-950/95 to-transparent">
           <button
             onClick={handleOpenCreateModal}
@@ -415,6 +492,18 @@ export default function DashboardView({ onStartWorkout }: { onStartWorkout: (rou
         </div>
       </div>
 
+      {deleteTarget && <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="delete-title">
+        <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800 p-6 shadow-2xl">
+          <div className="w-11 h-11 rounded-xl bg-rose-400/10 text-rose-300 flex items-center justify-center mb-4"><Trash2 size={21} aria-hidden="true" /></div>
+          <h2 id="delete-title" className="text-xl font-bold">Xóa lịch tập?</h2>
+          <p className="text-sm text-zinc-400 leading-relaxed mt-2 break-words">Lịch “{deleteTarget.name}” sẽ được xóa khỏi giáo án của bạn.</p>
+          {modalError && <p className="app-feedback" role="alert">{modalError}</p>}
+          <div className="grid grid-cols-2 gap-3 mt-6">
+            <button type="button" disabled={deleting} onClick={closeDialog} className="rounded-xl bg-zinc-800 border border-zinc-700 py-3 text-sm font-semibold">Hủy</button>
+            <button type="button" disabled={deleting} onClick={confirmDelete} className="rounded-xl bg-rose-400 text-zinc-950 py-3 text-sm font-bold flex items-center justify-center gap-2">{deleting && <Loader2 className="animate-spin" size={16} />}{deleting ? 'Đang xóa...' : 'Xóa lịch tập'}</button>
+          </div>
+        </div>
+      </div>}
       {/* MODAL TẠO & SỬA LỊCH */}
       {showModal && (
         <div
@@ -423,10 +512,10 @@ export default function DashboardView({ onStartWorkout }: { onStartWorkout: (rou
           aria-modal="true"
           aria-labelledby="routine-modal-title"
         >
-          <div className="w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-t-[2rem] sm:rounded-[2rem] max-h-[92vh] flex flex-col shadow-2xl">
+          <div className="routine-dialog w-full bg-zinc-950 border border-zinc-800 rounded-t-[2rem] sm:rounded-[2rem] max-h-[92vh] flex flex-col shadow-2xl">
             {/* Modal header */}
             <div className="px-5 pt-3 pb-4 border-b border-zinc-900">
-              <div className="w-10 h-1 rounded-full bg-zinc-800 mx-auto mb-4 sm:hidden" aria-hidden="true" />
+
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-lime-400 mb-1">
@@ -437,7 +526,8 @@ export default function DashboardView({ onStartWorkout }: { onStartWorkout: (rou
                   </h3>
                 </div>
                 <button
-                  onClick={() => setShowModal(false)}
+                  disabled={saving}
+                  onClick={closeDialog}
                   className="w-10 h-10 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center active:scale-95 transition-all"
                   aria-label="Đóng"
                 >
@@ -447,7 +537,7 @@ export default function DashboardView({ onStartWorkout }: { onStartWorkout: (rou
             </div>
 
             {/* Modal body */}
-            <div className="flex-1 overflow-y-auto px-5 py-5">
+            <fieldset disabled={saving} className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
               <label htmlFor="routine-name" className="block text-[11px] font-bold uppercase tracking-[0.15em] text-zinc-500 mb-2">
                 Tên lịch
               </label>
@@ -456,7 +546,7 @@ export default function DashboardView({ onStartWorkout }: { onStartWorkout: (rou
                 type="text"
                 placeholder="vd: Ngực - Vai - Tay sau, Chân..."
                 value={routineName}
-                onChange={(e) => setRoutineName(e.target.value)}
+                onChange={(e) => { setRoutineName(e.target.value); setModalError(null); }}
                 className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5 mb-5 text-white font-semibold placeholder:text-zinc-600 placeholder:font-normal focus:outline-none focus:border-lime-400/60 focus:ring-4 focus:ring-lime-400/10 transition-all"
               />
 
@@ -610,6 +700,7 @@ export default function DashboardView({ onStartWorkout }: { onStartWorkout: (rou
                             <input
                               type="number"
                               inputMode="numeric"
+                              aria-label={`Rep mục tiêu set ${setIdx + 1} của ${item.name}`}
                               value={rep}
                               onChange={(e) => {
                                 const val = parseInt(e.target.value) || 1;
@@ -633,10 +724,11 @@ export default function DashboardView({ onStartWorkout }: { onStartWorkout: (rou
                   </p>
                 </div>
               )}
-            </div>
+            </fieldset>
 
             {/* Modal footer */}
             <div className="px-5 pt-3 pb-5 border-t border-zinc-900">
+              {modalError && <p className="app-feedback" role="alert"><AlertCircle size={16} aria-hidden="true" />{modalError}</p>}
               <button
                 onClick={handleSaveRoutine}
                 disabled={saving}
@@ -668,7 +760,7 @@ function StatTile({
   highlight = false,
 }: {
   icon: React.ReactNode;
-  value: number;
+  value: number | string;
   label: string;
   highlight?: boolean;
 }) {

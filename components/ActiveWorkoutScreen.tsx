@@ -1,7 +1,8 @@
 // components/ActiveWorkoutScreen.tsx
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useDialogFocus } from '@/components/useDialogFocus';
 import { supabase } from '@/lib/supabaseClient';
 import {
   Play,
@@ -56,79 +57,107 @@ export default function ActiveWorkoutScreen({
   const [showSummaryModal, setShowSummaryModal] = useState(false);
   const [actualReps, setActualReps] = useState<number[]>([]);
   const [isEditingReps, setIsEditingReps] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [progressMessage, setProgressMessage] = useState<string | null>(null);
+  const [finished, setFinished] = useState(false);
 
-  useEffect(() => {
-    loadWorkoutData();
+  useDialogFocus(!loading && !finished && (showMachineCheck ? 'machine' : showAlternativeModal ? 'alternative'
+    : showSummaryModal ? 'summary' : isResting ? 'rest' : false));
+
+  const loadWorkoutData = useCallback(async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setLoadError('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.'); return; }
+      setLoading(true);
+      setLoadError(null);
+
+      const { data: routineExList, error: routineError } = await supabase
+        .from('routine_exercises')
+        .select('exercise_id, order_index')
+        .eq('routine_id', routineId)
+        .order('order_index', { ascending: true });
+      if (routineError) throw routineError;
+
+      if (!routineExList || routineExList.length === 0) {
+        setLoadError('Lịch này chưa có bài tập. Quay lại và chỉnh sửa giáo án để thêm bài.');
+        return;
+      }
+
+      const exIds = routineExList.map(r => r.exercise_id);
+
+      const { data: libData, error: libraryError } = await supabase
+        .from('exercises_library')
+        .select('*')
+        .in('id', exIds);
+      if (libraryError) throw libraryError;
+
+      const { data: states, error: statesError } = await supabase
+        .from('user_exercise_state')
+        .select('*')
+        .eq('user_id', user.id)
+        .in('exercise_id', exIds);
+      if (statesError) throw statesError;
+
+      const mapped: ExerciseItem[] = routineExList.map(item => {
+        const ex = libData?.find(l => l.id === item.exercise_id);
+        const state = states?.find(s => s.exercise_id === item.exercise_id);
+
+        const setsCount = ex?.default_sets || 3;
+        const minRep = ex?.default_min_rep ?? 8;
+        const maxRep = ex?.default_max_rep ?? 12;
+
+        return {
+          id: item.exercise_id,
+          name: ex?.name || 'Bài tập',
+          targetWeight: state?.current_weight || 20,
+          targetReps: state?.target_reps || Array(setsCount).fill(minRep),
+          minRep: minRep,
+          maxRep: maxRep,
+          restSeconds: ex?.default_rest_seconds || 90,
+          completed: false,
+        };
+      });
+
+      setExercises(mapped);
+    } catch {
+      setLoadError('Không thể tải buổi tập. Kiểm tra kết nối và thử lại.');
+    } finally { setLoading(false); }
   }, [routineId]);
 
-  const loadWorkoutData = async () => {
-    setLoading(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    const { data: routineExList } = await supabase
-      .from('routine_exercises')
-      .select('exercise_id, order_index')
-      .eq('routine_id', routineId)
-      .order('order_index', { ascending: true });
-
-    if (!routineExList || routineExList.length === 0) {
-      alert('Lịch này chưa có bài tập nào! Hãy quay lại bấm Sửa để thêm bài.');
-      onBack();
-      return;
-    }
-
-    const exIds = routineExList.map(r => r.exercise_id);
-
-    const { data: libData } = await supabase
-      .from('exercises_library')
-      .select('*')
-      .in('id', exIds);
-
-    const { data: states } = await supabase
-      .from('user_exercise_state')
-      .select('*')
-      .eq('user_id', user.id)
-      .in('exercise_id', exIds);
-
-    const mapped: ExerciseItem[] = routineExList.map(item => {
-      const ex = libData?.find(l => l.id === item.exercise_id);
-      const state = states?.find(s => s.exercise_id === item.exercise_id);
-
-      const setsCount = ex?.default_sets || 3;
-      const minRep = ex?.default_min_rep ?? 8;
-      const maxRep = ex?.default_max_rep ?? 12;
-
-      return {
-        id: item.exercise_id,
-        name: ex?.name || 'Bài tập',
-        targetWeight: state?.current_weight || 20,
-        targetReps: state?.target_reps || Array(setsCount).fill(minRep),
-        minRep: minRep,
-        maxRep: maxRep,
-        restSeconds: ex?.default_rest_seconds || 90,
-        completed: false,
-      };
-    });
-
-    setExercises(mapped);
-    setLoading(false);
-  };
-
-  // Rest Timer Controller
   useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (isResting && timerLeft > 0) {
-      interval = setInterval(() => setTimerLeft((prev) => prev - 1), 1000);
-    } else if (isResting && timerLeft === 0) {
-      setIsResting(false);
-      if (typeof window !== 'undefined' && 'vibrate' in navigator) {
-        navigator.vibrate([200, 100, 200]);
-      }
-      moveToNextSet();
+    let cancelled = false;
+    queueMicrotask(() => { if (!cancelled) loadWorkoutData(); });
+    return () => { cancelled = true; };
+  }, [loadWorkoutData]);
+
+  const currentExercise = exercises[currentIndex];
+  const moveToNextSet = useCallback(() => {
+    if (!currentExercise) return;
+    if (currentSet < currentExercise.targetReps.length) {
+      setCurrentSet((prev) => prev + 1);
+    } else {
+      setActualReps([...currentExercise.targetReps]);
+      setShowSummaryModal(true);
     }
-    return () => clearInterval(interval);
-  }, [isResting, timerLeft]);
+  }, [currentSet, currentExercise]);
+
+  // Keep timer transitions in the timer callback rather than synchronous effects.
+  useEffect(() => {
+    if (!isResting) return;
+    const timeout = setTimeout(() => {
+      if (timerLeft <= 1) {
+        setTimerLeft(0);
+        setIsResting(false);
+        if ('vibrate' in navigator) navigator.vibrate([200, 100, 200]);
+        moveToNextSet();
+      } else {
+        setTimerLeft((prev) => prev - 1);
+      }
+    }, timerLeft > 0 ? 1000 : 0);
+    return () => clearTimeout(timeout);
+  }, [isResting, timerLeft, moveToNextSet]);
 
   if (loading) {
     return (
@@ -145,20 +174,24 @@ export default function ActiveWorkoutScreen({
     );
   }
 
-  const currentExercise = exercises[currentIndex];
+  if (finished || loadError || !currentExercise) {
+    return <main className="app-screen flex min-h-screen items-center justify-center p-5">
+      <section className="w-full max-w-md rounded-3xl bg-zinc-900 border border-zinc-800 p-7 text-center">
+        <div className="w-14 h-14 rounded-2xl bg-lime-400/10 text-lime-400 flex items-center justify-center mx-auto mb-5">
+          {finished ? <Check size={28} aria-hidden="true" /> : <Dumbbell size={26} aria-hidden="true" />}
+        </div>
+        <h1 className="text-2xl font-bold tracking-tight">{finished ? 'Buổi tập hoàn thành!' : 'Chưa thể bắt đầu buổi tập'}</h1>
+        <p className="text-sm text-zinc-400 leading-relaxed mt-3" role="status">{finished ? 'Bạn đã hoàn thành toàn bộ giáo án. Kết quả đã được lưu — tiếp tục tiến bộ ở buổi tập tới.' : loadError || 'Chưa có bài tập trong giáo án này.'}</p>
+        {finished && progressMessage && <p className="app-feedback is-success text-left">{progressMessage}</p>}
+        <button type="button" className="auth-primary mt-6" onClick={onBack}><ArrowLeft size={17} aria-hidden="true" />Về giáo án của bạn</button>
+        {!finished && <button type="button" className="auth-text-link mt-4" onClick={loadWorkoutData}>Thử tải lại</button>}
+      </section>
+    </main>;
+  }
 
   const handleCompleteSet = () => {
     setTimerLeft(currentExercise.restSeconds);
     setIsResting(true);
-  };
-
-  const moveToNextSet = () => {
-    if (currentSet < currentExercise.targetReps.length) {
-      setCurrentSet((prev) => prev + 1);
-    } else {
-      setActualReps([...currentExercise.targetReps]);
-      setShowSummaryModal(true);
-    }
   };
 
   const handleMachineBusy = () => {
@@ -178,70 +211,78 @@ export default function ActiveWorkoutScreen({
 
   // LƯU KẾT QUẢ VÀ TỰ ĐỘNG THẮP SÁNG Ô TÍM KHI XONG BUỔI
   const finalizeExercise = async (finalReps: number[]) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    if (saving) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setSaveError('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.'); return; }
 
-    const { data: oldState } = await supabase
-      .from('user_exercise_state')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('exercise_id', currentExercise.id)
-      .single();
+      const { data: oldState } = await supabase
+        .from('user_exercise_state')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('exercise_id', currentExercise.id)
+        .single();
 
-    const calculation = calculateNextSession(
-      {
-        currentWeight: currentExercise.targetWeight,
-        targetReps: currentExercise.targetReps,
-        plateauCount: oldState?.plateau_count || 0,
-        isCalibrating: oldState?.is_calibrating ?? true,
-        lastReps: oldState?.last_reps || [],
-      },
-      finalReps,
-      'upper_compound',
-      true,
-      currentExercise.minRep,
-      currentExercise.maxRep
-    );
+      const calculation = calculateNextSession(
+        {
+          currentWeight: currentExercise.targetWeight,
+          targetReps: currentExercise.targetReps,
+          plateauCount: oldState?.plateau_count || 0,
+          isCalibrating: oldState?.is_calibrating ?? true,
+          lastReps: oldState?.last_reps || [],
+        },
+        finalReps,
+        'upper_compound',
+        true,
+        currentExercise.minRep,
+        currentExercise.maxRep
+      );
 
-    // Lưu trạng thái tạ
-    await supabase.from('user_exercise_state').upsert({
-      user_id: user.id,
-      exercise_id: currentExercise.id,
-      current_weight: calculation.nextWeight,
-      target_reps: calculation.nextTargetReps,
-      plateau_count: calculation.nextPlateauCount,
-      is_calibrating: calculation.isCalibrating,
-      last_reps: finalReps,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'user_id, exercise_id' });
-
-    alert(`Hoàn thành bài tập!\n${calculation.actionMessage}`);
-    setShowSummaryModal(false);
-    setIsEditingReps(false);
-
-    const updated = [...exercises];
-    updated[currentIndex].completed = true;
-    setExercises(updated);
-
-    const nextUncompleted = updated.findIndex(ex => !ex.completed);
-    if (nextUncompleted !== -1) {
-      setCurrentIndex(nextUncompleted);
-      setCurrentSet(1);
-      setShowMachineCheck(true);
-    } else {
-      // ĐÃ XONG TẤT CẢ CÁC BÀI -> GHI NHẬT KÝ VÀO BẢNG WORKOUT_LOGS ĐỂ THẮP SÁNG Ô TÍM TRÊN HEATMAP
-      const todayStr = new Date().toISOString().split('T')[0];
-      await supabase.from('workout_logs').insert({
+      // Lưu trạng thái tạ
+      const { error: stateError } = await supabase.from('user_exercise_state').upsert({
         user_id: user.id,
-        workout_date: todayStr,
-        routine_name: routineName,
-        level: 2, // Mức 2: Tím phát sáng
-        summary: 'Đã hoàn thành toàn bộ các bài tập hôm nay!'
-      });
+        exercise_id: currentExercise.id,
+        current_weight: calculation.nextWeight,
+        target_reps: calculation.nextTargetReps,
+        plateau_count: calculation.nextPlateauCount,
+        is_calibrating: calculation.isCalibrating,
+        last_reps: finalReps,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'user_id, exercise_id' });
+      if (stateError) throw stateError;
 
-      alert('🎉 Chúc mừng bạn đã hoàn thành XUẤT SẮC toàn bộ buổi tập hôm nay!');
-      onBack();
-    }
+      const updated = [...exercises];
+      updated[currentIndex].completed = true;
+
+      const nextUncompleted = updated.findIndex(ex => !ex.completed);
+      if (nextUncompleted !== -1) {
+        setProgressMessage(calculation.actionMessage);
+        setShowSummaryModal(false);
+        setIsEditingReps(false);
+        setExercises(updated);
+        setCurrentIndex(nextUncompleted);
+        setCurrentSet(1);
+        setShowMachineCheck(true);
+      } else {
+        // ĐÃ XONG TẤT CẢ CÁC BÀI -> GHI NHẬT KÝ VÀO BẢNG WORKOUT_LOGS ĐỂ THẮP SÁNG Ô TÍM TRÊN HEATMAP
+        const todayStr = new Date().toISOString().split('T')[0];
+        const { error: logError } = await supabase.from('workout_logs').insert({
+          user_id: user.id,
+          workout_date: todayStr,
+          routine_name: routineName,
+          level: 2, // Mức 2: Tím phát sáng
+          summary: 'Đã hoàn thành toàn bộ các bài tập hôm nay!'
+        });
+        if (logError) throw logError;
+        setProgressMessage(calculation.actionMessage);
+        setShowSummaryModal(false);
+        setFinished(true);
+      }
+    } catch {
+      setSaveError('Không thể lưu kết quả. Vui lòng kiểm tra kết nối và thử lại.');
+    } finally { setSaving(false); }
   };
 
   const remainingExercises = exercises.filter((ex, idx) => !ex.completed && idx !== currentIndex);
@@ -263,15 +304,9 @@ export default function ActiveWorkoutScreen({
     .slice(0, 3);
 
   return (
-    <div className="relative min-h-screen bg-zinc-950 text-white max-w-md mx-auto flex flex-col overflow-hidden">
-      {/* Ambient glow */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute -top-32 left-1/2 -translate-x-1/2 w-[28rem] h-[28rem] rounded-full bg-lime-400/10 blur-3xl"
-      />
-
+    <div className="app-screen workout-screen relative flex flex-col">
       {/* HEADER */}
-      <header className="relative z-10 px-5 pt-5">
+      <header className="workout-header relative z-10">
         <div className="flex items-center justify-between">
           <button
             onClick={onBack}
@@ -309,9 +344,9 @@ export default function ActiveWorkoutScreen({
       </header>
 
       {/* MAIN CONTENT */}
-      <main className="relative z-10 flex-1 flex flex-col px-5 pt-7 pb-36">
+      <main className="workout-content relative z-10 flex-1 flex flex-col">
         {/* Exercise title */}
-        <div>
+        <div className="workout-title">
           <p className="text-[11px] font-bold tracking-[0.2em] text-lime-400 uppercase">
             Bài {currentIndex + 1} trên {exercises.length}
           </p>
@@ -321,7 +356,7 @@ export default function ActiveWorkoutScreen({
         </div>
 
         {/* Stats row */}
-        <div className="grid grid-cols-3 gap-2 mt-6">
+        <div className="workout-stats grid grid-cols-3 gap-2">
           <div className="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-3">
             <div className="flex items-center gap-1.5 text-zinc-500">
               <Weight size={13} />
@@ -358,14 +393,12 @@ export default function ActiveWorkoutScreen({
         {/* Current set hero card */}
         <section
           aria-label="Hiệp đang tập"
-          className="relative mt-4 rounded-3xl border border-zinc-800 bg-gradient-to-b from-zinc-900 to-zinc-950 p-6 overflow-hidden"
+          className="workout-hero relative rounded-3xl border border-zinc-800 overflow-hidden"
         >
-          <div aria-hidden="true" className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-lime-400/60 to-transparent" />
 
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-2 text-[11px] font-bold tracking-[0.2em] text-zinc-400 uppercase">
               <span className="relative flex w-2 h-2">
-                <span className="absolute inline-flex h-full w-full rounded-full bg-lime-400 opacity-75 animate-ping" />
                 <span className="relative inline-flex w-2 h-2 rounded-full bg-lime-400" />
               </span>
               Hiệp đang tập
@@ -392,7 +425,7 @@ export default function ActiveWorkoutScreen({
           </div>
 
           {/* Set pills */}
-          <ol className="mt-6 grid gap-2" style={{ gridTemplateColumns: `repeat(${totalSets}, minmax(0, 1fr))` }}>
+          <ol className="mt-6 grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(totalSets, 5)}, minmax(0, 1fr))` }}>
             {currentExercise.targetReps.map((rep, idx) => {
               const setNumber = idx + 1;
               const isDone = setNumber < currentSet;
@@ -421,7 +454,7 @@ export default function ActiveWorkoutScreen({
 
         {/* Up next */}
         {upNext.length > 0 && (
-          <section aria-label="Bài tiếp theo" className="mt-6">
+          <section aria-label="Bài tiếp theo" className="workout-upnext">
             <h2 className="text-[11px] font-bold tracking-[0.2em] text-zinc-500 uppercase mb-3">Tiếp theo</h2>
             <ul className="space-y-2">
               {upNext.map((ex) => (
@@ -447,7 +480,7 @@ export default function ActiveWorkoutScreen({
       </main>
 
       {/* PRIMARY CTA - sticky bottom */}
-      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md z-20 px-5 pb-6 pt-10 bg-gradient-to-t from-zinc-950 via-zinc-950/95 to-transparent">
+      <div className="workout-action fixed bottom-0 left-1/2 -translate-x-1/2 w-full z-20">
         <button
           onClick={handleCompleteSet}
           className="group w-full bg-lime-400 hover:bg-lime-300 active:scale-[0.98] transition-all text-zinc-950 font-black text-base py-5 rounded-2xl shadow-[0_10px_40px_-10px_rgba(163,230,53,0.6)] flex items-center justify-center gap-3"
@@ -460,6 +493,10 @@ export default function ActiveWorkoutScreen({
         </button>
       </div>
 
+      {progressMessage && !showMachineCheck && <div className="app-feedback app-toast is-success" role="status">
+        <Check size={17} aria-hidden="true" /><span>{progressMessage}</span>
+        <button type="button" className="shrink-0 ml-1" aria-label="Ẩn thông báo" onClick={() => setProgressMessage(null)}><X size={16} /></button>
+      </div>}
       {/* 1. MODAL CHECK MÁY CÓ TRỐNG KHÔNG */}
       {showMachineCheck && (
         <div
@@ -469,7 +506,7 @@ export default function ActiveWorkoutScreen({
           className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center z-50"
         >
           <div className="bg-zinc-900 border border-zinc-800 w-full max-w-md rounded-t-[2rem] sm:rounded-[2rem] p-6 pb-8 shadow-2xl animate-in slide-in-from-bottom duration-300">
-            <div aria-hidden="true" className="w-10 h-1 rounded-full bg-zinc-700 mx-auto mb-6 sm:hidden" />
+
 
             <div className="flex items-start gap-4">
               <div className="w-14 h-14 bg-lime-400/10 border border-lime-400/20 text-lime-400 rounded-2xl flex items-center justify-center shrink-0">
@@ -485,7 +522,7 @@ export default function ActiveWorkoutScreen({
               </div>
             </div>
 
-            <div className="mt-5 flex gap-2 text-xs">
+            <div className="workout-machine-chips mt-5 flex gap-2 text-xs">
               <span className="px-3 py-1.5 rounded-full bg-zinc-800 text-zinc-300 font-semibold tabular-nums">
                 {currentExercise.targetWeight}kg
               </span>
@@ -530,7 +567,7 @@ export default function ActiveWorkoutScreen({
           className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-end sm:items-center justify-center z-50"
         >
           <div className="bg-zinc-900 border border-zinc-800 w-full max-w-md rounded-t-[2rem] sm:rounded-[2rem] p-6 max-h-[88vh] flex flex-col shadow-2xl animate-in slide-in-from-bottom duration-300">
-            <div aria-hidden="true" className="w-10 h-1 rounded-full bg-zinc-700 mx-auto mb-6 sm:hidden" />
+
 
             <div>
               <h3 id="alternative-title" className="text-xl font-black">Chọn bài thay thế</h3>
@@ -587,16 +624,15 @@ export default function ActiveWorkoutScreen({
           role="dialog"
           aria-modal="true"
           aria-label="Nghỉ giữa hiệp"
-          className="fixed inset-0 bg-zinc-950 flex flex-col items-center justify-between p-6 pt-14 pb-10 z-40"
+          className="rest-dialog fixed inset-0 flex flex-col items-center z-40"
         >
-          <div aria-hidden="true" className="pointer-events-none absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full bg-lime-400/10 blur-3xl" />
 
-          <div className="relative text-center">
+          <div className="rest-header relative text-center">
             <p className="text-[11px] font-bold tracking-[0.25em] text-zinc-500 uppercase">Nghỉ giữa hiệp</p>
             <p className="text-sm font-semibold text-zinc-300 mt-1 line-clamp-1">{currentExercise.name}</p>
           </div>
 
-          <div className="relative w-72 h-72 flex items-center justify-center">
+          <div className="rest-clock relative flex items-center justify-center">
             <svg className="absolute inset-0 -rotate-90" viewBox="0 0 260 260" aria-hidden="true">
               <circle cx="130" cy="130" r={RING_RADIUS} fill="none" stroke="currentColor" strokeWidth="6" className="text-zinc-900" />
               <circle
@@ -612,7 +648,7 @@ export default function ActiveWorkoutScreen({
                 strokeDashoffset={RING_CIRCUMFERENCE * (1 - restRatio)}
               />
             </svg>
-            <div className="text-center" aria-live="polite">
+            <div className="text-center" role="timer" aria-label="Thời gian nghỉ còn lại">
               <div className="text-7xl font-black tabular-nums tracking-tighter">{formattedTimer}</div>
               <p className="text-xs text-zinc-500 mt-2 font-semibold tabular-nums">
                 / {currentExercise.restSeconds}s
@@ -620,7 +656,7 @@ export default function ActiveWorkoutScreen({
             </div>
           </div>
 
-          <div className="relative w-full max-w-md space-y-4">
+          <div className="rest-footer relative space-y-4">
             <div className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 flex items-center justify-between">
               <div>
                 <p className="text-[10px] font-bold tracking-[0.2em] text-zinc-500 uppercase">Chuẩn bị</p>
@@ -657,7 +693,7 @@ export default function ActiveWorkoutScreen({
           className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-end sm:items-center justify-center z-50"
         >
           <div className="bg-zinc-900 border border-zinc-800 w-full max-w-md rounded-t-[2rem] sm:rounded-[2rem] p-6 pb-8 max-h-[92vh] overflow-y-auto shadow-2xl animate-in slide-in-from-bottom duration-300">
-            <div aria-hidden="true" className="w-10 h-1 rounded-full bg-zinc-700 mx-auto mb-6 sm:hidden" />
+
 
             <div className="text-center">
               <div className="w-14 h-14 rounded-full bg-lime-400 text-zinc-950 flex items-center justify-center mx-auto shadow-[0_0_40px_-5px_rgba(163,230,53,0.6)]">
@@ -667,6 +703,7 @@ export default function ActiveWorkoutScreen({
               <p className="text-sm text-zinc-400 mt-1 line-clamp-2">{currentExercise.name}</p>
             </div>
 
+            {saveError && <p className="app-feedback" role="alert">{saveError}</p>}
             {!isEditingReps ? (
               <>
                 <div className="mt-6 rounded-2xl bg-zinc-950/60 border border-zinc-800 p-4">
@@ -674,7 +711,7 @@ export default function ActiveWorkoutScreen({
                     <span>{totalSets} set × {currentExercise.targetWeight}kg</span>
                     <span>Mục tiêu</span>
                   </div>
-                  <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${totalSets}, minmax(0, 1fr))` }}>
+                  <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(totalSets, 5)}, minmax(0, 1fr))` }}>
                     {currentExercise.targetReps.map((rep, idx) => (
                       <div key={idx} className="rounded-xl bg-zinc-900 border border-zinc-800 py-2.5 text-center">
                         <div className="text-[9px] font-bold uppercase tracking-wider text-zinc-500">S{idx + 1}</div>
@@ -690,16 +727,18 @@ export default function ActiveWorkoutScreen({
 
                 <div className="grid grid-cols-2 gap-3">
                   <button
+                    disabled={saving}
                     onClick={() => setIsEditingReps(true)}
                     className="bg-zinc-800 hover:bg-zinc-700 border border-zinc-700/60 py-4 rounded-2xl font-bold text-zinc-200 flex items-center justify-center gap-2 text-sm active:scale-[0.98] transition-all"
                   >
                     <X size={18} /> KHÔNG
                   </button>
                   <button
+                    disabled={saving}
                     onClick={() => finalizeExercise(currentExercise.targetReps)}
                     className="bg-lime-400 hover:bg-lime-300 py-4 rounded-2xl font-black text-zinc-950 flex items-center justify-center gap-2 text-sm active:scale-[0.98] transition-all"
                   >
-                    <Check size={18} strokeWidth={3} /> CÓ, ĐỦ
+                    {saving ? <Loader2 className="animate-spin" size={18} /> : <Check size={18} strokeWidth={3} />} {saving ? 'ĐANG LƯU...' : 'CÓ, ĐỦ'}
                   </button>
                 </div>
               </>
@@ -760,11 +799,12 @@ export default function ActiveWorkoutScreen({
                 </ul>
 
                 <button
+                  disabled={saving}
                   onClick={() => finalizeExercise(actualReps)}
                   className="w-full bg-lime-400 hover:bg-lime-300 py-4 rounded-2xl font-black mt-5 text-zinc-950 text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
                 >
                   <Check size={18} strokeWidth={3} />
-                  LƯU KẾT QUẢ THỰC TẾ
+                  {saving ? 'ĐANG LƯU...' : 'LƯU KẾT QUẢ THỰC TẾ'}
                 </button>
               </div>
             )}
