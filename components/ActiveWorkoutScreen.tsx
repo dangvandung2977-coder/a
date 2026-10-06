@@ -3,6 +3,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useDialogFocus } from '@/components/useDialogFocus';
+import ExerciseThumb from '@/components/ExerciseThumb';
 import { supabase } from '@/lib/supabaseClient';
 import {
   Play,
@@ -585,9 +586,10 @@ export default function ActiveWorkoutScreen({
                 <button
                   key={ex.id}
                   onClick={() => handleSelectAlternativeExercise(ex.id)}
-                  className="w-full text-left bg-zinc-950/60 hover:bg-zinc-800/60 border border-zinc-800 hover:border-lime-400/40 p-4 rounded-2xl active:scale-[0.98] transition-all flex items-center justify-between gap-3 group"
+                  className="w-full text-left bg-zinc-950/60 hover:bg-zinc-800/60 border border-zinc-800 hover:border-lime-400/40 p-4 rounded-2xl active:scale-[0.98] transition-all flex items-center gap-3 group"
                 >
-                  <div className="min-w-0">
+                  <ExerciseThumb name={ex.name} />
+                  <div className="min-w-0 flex-1">
                     <h4 className="font-bold text-white text-sm truncate">{ex.name}</h4>
                     <div className="flex items-center gap-3 mt-1.5 text-[11px] text-zinc-500 tabular-nums">
                       <span className="flex items-center gap-1"><Weight size={11} />{ex.targetWeight}kg</span>

@@ -269,7 +269,7 @@ input:focus-visible { outline-offset: 2px; }
 }
 @media (max-width: 767px) {
   .auth-page { background-image: linear-gradient(180deg, #09090bcc, #09090be8), url('/images/gym-interior-mobile.webp'); background-position: center, 72% center; }
-  .dashboard-screen, .app-workout-page { background-image: linear-gradient(180deg, #09090bab, #09090be8 280px, var(--background) 480px), url('/images/gym-weights-mobile.webp'); background-size: 100% 480px, auto 480px; }
+  .dashboard-screen, .app-workout-page { background-image: linear-gradient(180deg, #09090bab, #09090be8 280px, var(--background) 480px), url('/images/gym-weights-mobile.webp'); background-size: 100% 480px, 100% auto; background-position: top center, top center; }
   .app-topbar { padding: 16px 20px; }
   .app-topbar-label { display: none; }
   .dashboard-shell { max-width: 560px; padding: 28px 20px 124px; }

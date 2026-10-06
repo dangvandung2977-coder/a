@@ -24,6 +24,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import WorkoutHeatmap, { DayActivity } from '@/components/WorkoutHeatmap';
+import ExerciseThumb from '@/components/ExerciseThumb';
 
 interface SelectedExerciseItem {
   exerciseId: string;
@@ -582,9 +583,7 @@ export default function DashboardView({ onStartWorkout }: { onStartWorkout: (rou
                           disabled={added}
                           className="w-full text-left flex items-center gap-3 p-3 rounded-xl hover:bg-zinc-800 disabled:opacity-50 disabled:hover:bg-transparent transition-colors"
                         >
-                          <span className="w-9 h-9 shrink-0 rounded-xl bg-zinc-950 border border-zinc-800 text-zinc-400 flex items-center justify-center">
-                            <Dumbbell className="w-4 h-4" aria-hidden="true" />
-                          </span>
+                          <ExerciseThumb name={ex.name} />
                           <span className="flex-1 min-w-0">
                             <span className="block font-semibold text-sm text-white truncate">{ex.name}</span>
                             <span className="block text-xs text-zinc-500 tabular-nums">
