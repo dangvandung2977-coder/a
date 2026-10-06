@@ -33,6 +33,13 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
+# ai assistant vendor skills + generated design docs (not part of the app)
+.opencode/
+design-system/
+
+# large video assets (kept local only, not pushed)
+public/videos/*.mp4
+
 # vercel
 .vercel
 

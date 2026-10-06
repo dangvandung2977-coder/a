@@ -1,0 +1,26 @@
+[
+  {
+    "file": "gym-progression-ad-portrait.mp4",
+    "width": 1080,
+    "height": 1920,
+    "fps": 30,
+    "frames": 900,
+    "duration": 30,
+    "bytes": 7108633,
+    "sha256": "5f044dae053407f1a72608216d05d360368d29a5db808f6f33e2c0e5ea11e45c",
+    "loudness_lufs": -16.04,
+    "true_peak_dbtp": -4.66
+  },
+  {
+    "file": "gym-progression-ad-landscape.mp4",
+    "width": 1920,
+    "height": 1080,
+    "fps": 30,
+    "frames": 900,
+    "duration": 30,
+    "bytes": 8917961,
+    "sha256": "61c178f96d1a29def76125c4ff9e98f997aaaf3776b297b22bfee3aab45f4b07",
+    "loudness_lufs": -16.04,
+    "true_peak_dbtp": -4.66
+  }
+]

@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 const display = Barlow_Condensed({
   variable: "--font-display",
   subsets: ["latin", "vietnamese"],
-  weight: ["500", "600", "700"],
+  weight: ["500", "600", "700", "800", "900"],
 });
 
 export const metadata: Metadata = {

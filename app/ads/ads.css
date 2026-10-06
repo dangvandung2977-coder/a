@@ -1,0 +1,33 @@
+.ad-library { width: min(1280px, 100%); margin: 0 auto; padding: 0 40px; color: var(--foreground); }
+.ad-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; min-height: 88px; border-bottom: 1px solid var(--border); }
+.ad-header > a { display: inline-flex; align-items: center; gap: 9px; min-height: 44px; font-size: 11px; font-weight: 650; letter-spacing: .06em; }
+.ad-header > a > svg { color: var(--accent); }
+.ad-intro { padding: 32px 0 36px; }
+.ad-back { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; color: var(--muted); font-size: 10px; letter-spacing: .06em; }
+.ad-back:hover, .ad-header > a:hover, .ad-footer a:hover { color: var(--accent); }
+.ad-eyebrow { margin-top: 25px; color: var(--accent); font-size: 10px; font-weight: 650; letter-spacing: .15em; }
+.ad-intro h1 { font: 800 clamp(58px, 7vw, 96px)/1 var(--font-display), sans-serif; letter-spacing: -.025em; margin-top: 12px; }
+.ad-intro h1 em { color: var(--accent); font-style: normal; }
+.ad-description { margin-top: 15px; color: #b5b5bf; font-size: 14px; line-height: 1.6; }
+.ad-specs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; }
+.ad-specs span { padding: 7px 10px; border: 1px solid #303036; border-radius: 5px; color: #b8b8c1; font: 9px var(--font-geist-mono), monospace; letter-spacing: .045em; }
+.ad-grid { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.5fr); gap: 28px; align-items: start; }
+.ad-cut { min-width: 0; overflow: hidden; border: 1px solid #333338; border-radius: 15px; background: #121214; box-shadow: 0 18px 50px #0003; }
+.ad-cut-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 53px; padding: 0 19px; color: #b5b5be; font: 10px var(--font-geist-mono), monospace; letter-spacing: .035em; }
+.ad-cut-heading > span:first-child { display: inline-flex; align-items: center; gap: 8px; }
+.ad-cut-heading svg { color: var(--accent); }
+.ad-video-wrap { display: grid; place-items: center; padding: 16px; border-block: 1px solid #29292e; background: radial-gradient(ellipse at 50% 50%, #a3e6350a, transparent 70%), #08080a; }
+.ad-video-wrap video { display: block; width: 100%; height: auto; max-width: 100%; background: #09090b; border: 1px solid #27272b; border-radius: 5px; }
+.ad-cut-portrait video { width: auto; height: min(62svh, 640px); }
+.ad-cut-info { padding: 22px 20px 20px; }
+.ad-cut-info h2 { font: 700 29px/1.1 var(--font-display), sans-serif; letter-spacing: -.01em; }
+.ad-cut-info p { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 7px 14px; margin-top: 10px; color: #a7a7b1; font-size: 11px; line-height: 1.5; }
+.ad-cut-info p > span { color: #92929d; font: 10px var(--font-geist-mono), monospace; }
+.ad-download { display: flex; align-items: center; gap: 11px; min-height: 52px; margin: 0 20px 20px; padding: 13px 17px; border: 1px solid #b4ef54; border-radius: 8px; background: var(--accent); color: #101407; font-size: 11px; font-weight: 800; letter-spacing: .04em; }
+.ad-download > svg:last-child { margin-left: auto; }
+.ad-download:hover { background: #b6f24f; }
+.ad-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px 24px; margin-top: 40px; padding: 21px 0 28px; border-top: 1px solid var(--border); color: #9999a3; font-size: 10px; }
+.ad-footer > span { letter-spacing: .13em; }
+.ad-footer a { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; }
+@media (max-width: 850px) { .ad-grid { grid-template-columns: 1fr; max-width: 620px; margin: 0 auto; gap: 24px; }.ad-cut-portrait video { height: min(68svh, 640px); }.ad-library { padding: 0 24px; } }
+@media (max-width: 480px) { .ad-library { padding: 0 16px; }.ad-header { min-height: 75px; gap: 12px; }.ad-header .app-brand { font-size: 11px; gap: 8px; }.ad-header .app-brand-icon { width: 32px; height: 32px; }.ad-header > a { font-size: 9px; gap: 5px; }.ad-intro { padding: 20px 0 26px; }.ad-eyebrow { font-size: 8px; letter-spacing: .08em; margin-top: 17px; }.ad-description { font-size: 12px; }.ad-specs { gap: 6px; }.ad-specs span { font-size: 8px; padding: 7px 8px; }.ad-cut-heading { padding: 0 13px; font-size: 9px; }.ad-video-wrap { padding: 10px; }.ad-cut-info { padding: 18px 15px; }.ad-download { margin: 0 15px 15px; padding-inline: 13px; font-size: 10px; }.ad-footer { margin-top: 26px; } }

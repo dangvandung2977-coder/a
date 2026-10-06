@@ -1,0 +1,130 @@
+{
+  "provider": "ElevenLabs",
+  "voice_id": "TX3LPaxmHKxFdv7VOQHJ",
+  "voice_name": "Liam - Energetic, Social Media Creator",
+  "voice_category": "premade",
+  "discovery": "GET https://api.elevenlabs.io/v1/voices (public)",
+  "output_format": "mp3_44100_128",
+  "takes": [
+    {
+      "file": "voiceover-01.mp3",
+      "source": "source/voiceover-01.mp3",
+      "global_start_s": 0.15,
+      "budget_s": 4.65,
+      "duration_s": 3.96356,
+      "atempo": 1,
+      "request": {
+        "text": "You train hard, but you're not getting stronger. The problem? No structured progression.",
+        "model_id": "eleven_multilingual_v2",
+        "seed": 260611,
+        "voice_settings": {
+          "stability": 0.53,
+          "similarity_boost": 0.78,
+          "style": 0.14,
+          "use_speaker_boost": true,
+          "speed": 1.2
+        }
+      }
+    },
+    {
+      "file": "voiceover-02.mp3",
+      "source": "source/voiceover-02.mp3",
+      "global_start_s": 6,
+      "budget_s": 5.5,
+      "duration_s": 2.791973,
+      "atempo": 1,
+      "request": {
+        "text": "Gym Progression calculates your next weight automatically.",
+        "model_id": "eleven_multilingual_v2",
+        "seed": 260612,
+        "voice_settings": {
+          "stability": 0.53,
+          "similarity_boost": 0.78,
+          "style": 0.14,
+          "use_speaker_boost": true,
+          "speed": 1.08
+        }
+      }
+    },
+    {
+      "file": "voiceover-03.mp3",
+      "source": "source/voiceover-03.mp3",
+      "global_start_s": 16,
+      "budget_s": 8,
+      "duration_s": 4.845147,
+      "atempo": 1,
+      "request": {
+        "text": "Build your workout, choose exercises, sets, reps, and starting weight in seconds.",
+        "model_id": "eleven_multilingual_v2",
+        "seed": 260613,
+        "voice_settings": {
+          "stability": 0.53,
+          "similarity_boost": 0.78,
+          "style": 0.14,
+          "use_speaker_boost": true,
+          "speed": 1.08
+        }
+      }
+    },
+    {
+      "file": "voiceover-04.mp3",
+      "source": "source/voiceover-04.mp3",
+      "global_start_s": 30.8,
+      "budget_s": 7,
+      "duration_s": 4.019909,
+      "atempo": 1,
+      "request": {
+        "text": "Stay on schedule with smart rest timers and track every workout automatically.",
+        "model_id": "eleven_multilingual_v2",
+        "seed": 260614,
+        "voice_settings": {
+          "stability": 0.53,
+          "similarity_boost": 0.78,
+          "style": 0.14,
+          "use_speaker_boost": true,
+          "speed": 1.08
+        }
+      }
+    },
+    {
+      "file": "voiceover-05.mp3",
+      "source": "source/voiceover-05.mp3",
+      "global_start_s": 42.6,
+      "budget_s": 8.8,
+      "duration_s": 4.427642,
+      "atempo": 1,
+      "request": {
+        "text": "Hit your reps? Increase the weight. Struggle? Keep it the same. No more guessing.",
+        "model_id": "eleven_multilingual_v2",
+        "seed": 260615,
+        "voice_settings": {
+          "stability": 0.53,
+          "similarity_boost": 0.78,
+          "style": 0.14,
+          "use_speaker_boost": true,
+          "speed": 1.08
+        }
+      }
+    },
+    {
+      "file": "voiceover-06.mp3",
+      "source": "source/voiceover-06.mp3",
+      "global_start_s": 53.1,
+      "budget_s": 5,
+      "duration_s": 2.461406,
+      "atempo": 1,
+      "request": {
+        "text": "Start your first workout with Gym Progression today.",
+        "model_id": "eleven_multilingual_v2",
+        "seed": 260616,
+        "voice_settings": {
+          "stability": 0.53,
+          "similarity_boost": 0.78,
+          "style": 0.14,
+          "use_speaker_boost": true,
+          "speed": 1.08
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+/* Capture-only art direction. The interactive 60-second film keeps its own layout. */
+html, body { width: 100%; height: 100%; overflow: hidden !important; }
+.motion-page { padding: 0 !important; }
+.film-screen { position: fixed !important; inset: 0 !important; width: 100vw !important; height: 100vh !important; min-height: 0 !important; max-height: none !important; z-index: 1000; aspect-ratio: auto !important; }
+.film-viewport { overflow: hidden; }
+.film-stage-label, .film-caption, .hook-edge-label, .hook-bottom-note, .solution-proof, .builder-annotation, .cta-signoff, .film-transition-blade { display: none !important; }
+.ad-artboard { --accent: #a3e635; }
+.ad-artboard .film-scenes { transform-origin: 50% 45%; }
+.ad-artboard .hook-gym { opacity: .94; }
+.ad-artboard .hook-shade { background: linear-gradient(90deg, #09090b18, #09090b20), linear-gradient(0deg, #09090bc0, transparent 35%); }
+.ad-artboard .film-stage-brand { top: 48px; left: 72px; }
+.ad-artboard .film-stage-brand .app-brand { font-size: 24px; }
+.ad-artboard .film-stage-brand .app-brand-icon { width: 44px; height: 44px; }
+.ad-artboard .progress-rules { display: none; }
+.ad-artboard .progress-plot { top: 480px; left: 260px; width: 1400px; }
+.ad-artboard .milestone-week { font-size: 14px; }
+.ad-artboard .cta-content { top: 134px; }
+.ad-artboard .cta-support { margin-top: 20px !important; }
+.ad-caption { position: absolute; z-index: 35; left: 280px; right: 280px; bottom: 48px; width: fit-content; max-width: 1360px; margin: 0 auto; padding: 12px 24px; border-radius: 9px; background: #070709ed; border: 1px solid #ffffff1b; color: #fff; font: 600 31px/1.32 var(--font-geist-sans), sans-serif; letter-spacing: -.015em; text-align: center; box-shadow: 0 5px 30px #0004; text-wrap: balance; }
+.ad-caption:empty { display: none; }
+.ad-wipe { position: absolute; z-index: 50; inset: -20%; background: #a3e635; box-shadow: -25px 0 0 #a3e63535, 25px 0 0 #e4ffb766; visibility: hidden; }
+.ad-edge { position: absolute; z-index: 40; bottom: 0; left: 0; right: 0; height: 4px; background: #a3e635; transform-origin: 0 50%; }
+.ad-artboard.is-portrait .film-stage-brand { top: 195px; left: 85px; }
+.ad-artboard.is-portrait .film-stage-brand .app-brand { font-size: 30px; }
+.ad-artboard.is-portrait .film-stage-brand .app-brand-icon { width: 53px; height: 53px; }
+.ad-artboard.is-portrait .hook-copy { top: 390px; }
+.ad-artboard.is-portrait .hook-data { top: 1220px; }
+.ad-artboard.is-portrait .solution-copy { top: 310px; }
+.ad-artboard.is-portrait .solution-browser { top: 665px; height: 730px; }
+.ad-artboard.is-portrait .feature-stack { display: none; }
+.ad-artboard.is-portrait .builder-panel { top: 320px; }
+.ad-artboard.is-portrait .active-heading { top: 320px; }
+.ad-artboard.is-portrait .rest-panel { top: 940px; left: 245px; width: 590px; padding: 25px 0; }
+.ad-artboard.is-portrait .rest-ring-wrap { width: 380px; height: 380px; margin-top: 12px; }
+.ad-artboard.is-portrait .rest-time-value { font-size: 116px; }
+.ad-artboard.is-portrait .rest-ring-center > span, .ad-artboard.is-portrait .rest-ring-center > p { font-size: 15px; }
+.ad-artboard.is-portrait .rest-compressed { margin-top: 6px; }
+.ad-artboard.is-portrait .rest-ready { margin-top: 8px !important; }
+.ad-artboard.is-portrait .progress-plot { top: 660px; left: 100px; width: 850px; }
+.ad-artboard.is-portrait .progress-rules { display: none; }
+.ad-artboard.is-portrait .overload-badge { top: 612px; font-size: 18px; }
+.ad-artboard.is-portrait .strength-badge { font-size: 15px; }
+.ad-artboard.is-portrait .cta-content { top: 340px; }
+.ad-artboard.is-portrait .cta-support { display: none; }
+.ad-artboard.is-portrait .ad-caption { left: 100px; right: 130px; bottom: 310px; max-width: 850px; padding: 16px 22px; font-size: 38px; line-height: 1.3; border-radius: 12px; }
