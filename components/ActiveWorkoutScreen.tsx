@@ -346,7 +346,7 @@ export default function ActiveWorkoutScreen({
       {/* MAIN CONTENT */}
       <main className="workout-content relative z-10 flex-1 flex flex-col">
         {/* Exercise title */}
-        <div className="workout-title">
+        <div className="workout-title anim-enter">
           <p className="text-[11px] font-bold tracking-[0.2em] text-lime-400 uppercase">
             Bài {currentIndex + 1} trên {exercises.length}
           </p>
@@ -356,7 +356,7 @@ export default function ActiveWorkoutScreen({
         </div>
 
         {/* Stats row */}
-        <div className="workout-stats grid grid-cols-3 gap-2">
+        <div className="workout-stats anim-enter grid grid-cols-3 gap-2" style={{ '--d': '70ms' } as React.CSSProperties}>
           <div className="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-3">
             <div className="flex items-center gap-1.5 text-zinc-500">
               <Weight size={13} />
@@ -393,7 +393,8 @@ export default function ActiveWorkoutScreen({
         {/* Current set hero card */}
         <section
           aria-label="Hiệp đang tập"
-          className="workout-hero relative rounded-3xl border border-zinc-800 overflow-hidden"
+          className="workout-hero anim-enter relative rounded-3xl border border-zinc-800 overflow-hidden"
+          style={{ '--d': '140ms' } as React.CSSProperties}
         >
 
           <div className="flex items-center justify-between">
@@ -454,7 +455,7 @@ export default function ActiveWorkoutScreen({
 
         {/* Up next */}
         {upNext.length > 0 && (
-          <section aria-label="Bài tiếp theo" className="workout-upnext">
+          <section aria-label="Bài tiếp theo" className="workout-upnext anim-enter" style={{ '--d': '200ms' } as React.CSSProperties}>
             <h2 className="text-[11px] font-bold tracking-[0.2em] text-zinc-500 uppercase mb-3">Tiếp theo</h2>
             <ul className="space-y-2">
               {upNext.map((ex) => (

@@ -367,7 +367,7 @@ export default function DashboardView({ onStartWorkout }: { onStartWorkout: (rou
         </div>
       </div>
       <div className="dashboard-shell">
-        <header className="dashboard-heading">
+        <header className="dashboard-heading anim-enter">
           <div>
             <p className="dashboard-date capitalize">{todayLabel}</p>
             <h1>Hôm nay bạn tập gì<span className="text-lime-400">?</span></h1>
@@ -381,7 +381,7 @@ export default function DashboardView({ onStartWorkout }: { onStartWorkout: (rou
           <button type="button" className="ml-auto text-lime-400 shrink-0" onClick={() => { loadRoutinesAndLogs(); loadLibrary(); }}>Thử lại</button>
         </div>}
         {/* STATS */}
-        <section aria-label="Thống kê" className="dashboard-stats grid grid-cols-3">
+        <section aria-label="Thống kê" className="dashboard-stats grid grid-cols-3 anim-enter" style={{ '--d': '80ms' } as React.CSSProperties}>
           <StatTile icon={<Flame className="w-4 h-4" />} value={loading ? '—' : sessionsThisMonth} label="Buổi tháng này" highlight />
           <StatTile icon={<CalendarDays className="w-4 h-4" />} value={loading ? '—' : totalSessions} label="Tổng buổi" />
           <StatTile icon={<Layers className="w-4 h-4" />} value={loading ? '—' : routines.length} label="Lịch tập" />
@@ -389,7 +389,7 @@ export default function DashboardView({ onStartWorkout }: { onStartWorkout: (rou
 
         <div className="dashboard-grid">
         {/* HEATMAP */}
-        <section aria-labelledby="heatmap-title" className="dashboard-activity border border-zinc-800 rounded-3xl">
+        <section aria-labelledby="heatmap-title" className="dashboard-activity border border-zinc-800 rounded-3xl anim-enter" style={{ '--d': '140ms' } as React.CSSProperties}>
           <div className="flex items-center justify-between mb-3">
             <h2 id="heatmap-title" className="text-xs font-bold uppercase tracking-[0.15em] text-zinc-400">
               Độ chăm chỉ
@@ -402,7 +402,7 @@ export default function DashboardView({ onStartWorkout }: { onStartWorkout: (rou
         </section>
 
         {/* DANH SÁCH LỊCH TẬP */}
-        <section aria-labelledby="routines-title" className="dashboard-routines" aria-busy={loading}>
+        <section aria-labelledby="routines-title" className="dashboard-routines anim-enter" aria-busy={loading} style={{ '--d': '200ms' } as React.CSSProperties}>
           <div className="flex items-end justify-between mb-3">
             <h2 id="routines-title" className="text-lg font-black tracking-tight">
               Giáo án của bạn
@@ -417,7 +417,8 @@ export default function DashboardView({ onStartWorkout }: { onStartWorkout: (rou
             {!loading && routines.map((routine, i) => (
               <li
                 key={routine.id}
-                className="routine-card group relative border border-zinc-800 hover:border-zinc-700 rounded-3xl transition-colors"
+                style={{ '--d': `${260 + Math.min(i, 5) * 70}ms` } as React.CSSProperties}
+                className="routine-card anim-enter group relative border border-zinc-800 hover:border-zinc-700 rounded-3xl transition-colors"
               >
                 <div className="flex items-center gap-3.5">
                   <div className="w-12 h-12 shrink-0 rounded-2xl bg-zinc-950 border border-zinc-800 flex flex-col items-center justify-center">

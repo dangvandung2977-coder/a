@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect, useLayoutEffect } from 'react';
 import { supabase, isSupabaseConfigured } from '@/lib/supabaseClient';
 import { getRememberSession, setRememberSession } from '@/lib/authStorage';
 import AppBrand from '@/components/AppBrand';
@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 
 type AuthMode = 'login' | 'register' | 'forgot' | 'reset';
-type FieldErrors = { email?: string; password?: string };
+type FieldErrors = { email?: string; password?: string; confirm?: string };
 
 function authError(error: { message: string; code?: string }) {
   switch (error.code) {
@@ -41,6 +41,7 @@ export default function AuthView({ onAuthSuccess, passwordRecovery = false }: {
 }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
   const [selectedMode, setMode] = useState<AuthMode>('login');
   const mode = passwordRecovery ? 'reset' : selectedMode;
   const isSignUp = mode === 'register';
@@ -53,8 +54,17 @@ export default function AuthView({ onAuthSuccess, passwordRecovery = false }: {
   const [errors, setErrors] = useState<FieldErrors>({});
   const [notice, setNotice] = useState<{ text: string; success?: boolean } | null>(null);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [registeredEmail, setRegisteredEmail] = useState<string | null>(null);
+  const [resendIn, setResendIn] = useState(0);
+  const showSuccess = Boolean(registeredEmail) && !showOnboarding;
+  useEffect(() => {
+    if (resendIn <= 0) return;
+    const t = window.setTimeout(() => setResendIn((v) => (v > 0 ? v - 1 : 0)), 1000);
+    return () => window.clearTimeout(t);
+  }, [resendIn]);
   const emailRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
+  const confirmRef = useRef<HTMLInputElement>(null);
   const busy = loading || googleLoading;
 
   const changeMode = (next: AuthMode) => {
@@ -64,6 +74,8 @@ export default function AuthView({ onAuthSuccess, passwordRecovery = false }: {
     setNotice(null);
     setShowPassword(false);
     setPassword('');
+    setConfirm('');
+    setRegisteredEmail(null);
   };
 
   const validateEmail = () => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
@@ -72,6 +84,20 @@ export default function AuthView({ onAuthSuccess, passwordRecovery = false }: {
   const validatePassword = () => !password ? 'Vui lòng nhập mật khẩu'
     : (isSignUp || mode === 'reset') && password.length < 8
       ? 'Mật khẩu phải có ít nhất 8 ký tự' : undefined;
+  const validateConfirm = () => !isSignUp ? undefined
+    : !confirm ? 'Vui lòng nhập lại mật khẩu'
+      : confirm !== password ? 'Mật khẩu nhập lại chưa khớp' : undefined;
+
+  const pwScore = (pw: string) => {
+    let s = 0;
+    if (pw.length >= 8) s++;
+    if (pw.length >= 12) s++;
+    if (/[a-zA-Z]/.test(pw) && /\d/.test(pw)) s++;
+    if (/[^A-Za-z0-9]/.test(pw)) s++;
+    return Math.min(s, 4);
+  };
+  const pwLabel = ['', 'Yếu', 'Ổn', 'Khá', 'Mạnh'][pwScore(password)];
+  const confirmMatch = confirm.length > 0 && confirm === password;
 
   const configurationReady = () => {
     if (isSupabaseConfigured) return true;
@@ -87,11 +113,13 @@ export default function AuthView({ onAuthSuccess, passwordRecovery = false }: {
     const nextErrors = {
       email: mode === 'reset' ? undefined : validateEmail(),
       password: mode === 'forgot' ? undefined : validatePassword(),
+      confirm: validateConfirm(),
     };
     setErrors(nextErrors);
-    if (nextErrors.email || nextErrors.password) {
+    if (nextErrors.email || nextErrors.password || nextErrors.confirm) {
       if (nextErrors.email) emailRef.current?.focus();
-      else passwordRef.current?.focus();
+      else if (nextErrors.password) passwordRef.current?.focus();
+      else confirmRef.current?.focus();
       return;
     }
     if (!configurationReady()) return;
@@ -110,13 +138,19 @@ export default function AuthView({ onAuthSuccess, passwordRecovery = false }: {
       } else {
         setRememberSession(remember);
         if (isSignUp) {
-          const { data, error } = await supabase.auth.signUp({ email: email.trim(), password });
+          const { data, error } = await supabase.auth.signUp({
+            email: email.trim(),
+            password,
+            options: { emailRedirectTo: window.location.origin },
+          });
           if (error) setNotice({ text: authError(error) });
           else if (data.user && data.session) {
             setTempUserId(data.user.id);
             setShowOnboarding(true);
           } else if (data.user) {
-            setNotice({ text: 'Vui lòng kiểm tra email để xác nhận tài khoản, sau đó đăng nhập.', success: true });
+            setRegisteredEmail(email.trim());
+            setResendIn(60);
+            setNotice(null);
           }
         } else {
           const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
@@ -128,6 +162,25 @@ export default function AuthView({ onAuthSuccess, passwordRecovery = false }: {
       setNotice({ text: 'Không thể kết nối. Kiểm tra kết nối mạng và thử lại.' });
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Gửi lại mail xác nhận sau khi đăng ký
+  const handleResend = async () => {
+    if (!registeredEmail || busy || resendIn > 0) return;
+    if (!configurationReady()) return;
+    setGoogleLoading(true);
+    try {
+      const { error } = await supabase.auth.resend({ type: 'signup', email: registeredEmail });
+      if (error) setNotice({ text: authError(error) });
+      else {
+        setNotice({ text: `Đã gửi lại liên kết tới ${registeredEmail}.`, success: true });
+        setResendIn(60);
+      }
+    } catch {
+      setNotice({ text: 'Không thể kết nối. Vui lòng thử lại.' });
+    } finally {
+      setGoogleLoading(false);
     }
   };
 
@@ -170,6 +223,36 @@ export default function AuthView({ onAuthSuccess, passwordRecovery = false }: {
       setLoading(false);
     }
   };
+
+  const panelsRef = useRef<HTMLDivElement>(null);
+  const heights = useRef<Partial<Record<AuthMode, number>>>({});
+  const lastMode = useRef<AuthMode>(mode);
+  const innerRaf = useRef(0);
+
+  // Track trượt ngang 4 màn + chiều cao co giãn theo màn đang hiện.
+  useLayoutEffect(() => {
+    const el = panelsRef.current;
+    const active = el?.querySelector('.auth-track > .auth-panel[data-active="true"]') as HTMLElement | null;
+    if (!el || !active) return;
+    const target = active.offsetHeight;
+    if (lastMode.current !== mode) {
+      el.style.height = `${heights.current[lastMode.current] ?? target}px`;
+      const outer = requestAnimationFrame(() => {
+        const inner = requestAnimationFrame(() => {
+          const cur = panelsRef.current?.querySelector('.auth-track > .auth-panel[data-active="true"]') as HTMLElement | null;
+          if (cur && panelsRef.current) {
+            panelsRef.current.style.height = `${cur.offsetHeight}px`;
+            heights.current[mode] = cur.offsetHeight;
+          }
+        });
+        innerRaf.current = inner;
+      });
+      lastMode.current = mode;
+      return () => { cancelAnimationFrame(outer); cancelAnimationFrame(innerRaf.current); };
+    }
+    if (el.style.height !== `${target}px`) el.style.height = `${target}px`;
+    heights.current[mode] = target;
+  });
 
   if (showOnboarding) {
     return (
@@ -237,6 +320,87 @@ export default function AuthView({ onAuthSuccess, passwordRecovery = false }: {
     );
   }
 
+  const renderFields = (m: AuthMode, inactive: boolean) => {
+    const mIsSignUp = m === 'register';
+    const mIsRecovery = m === 'forgot' || m === 'reset';
+    const suffix = `-${m}`;
+    return (
+      <div className="auth-fields" key={`${m}-${m === mode ? 'on' : 'off'}`}>
+        {mIsRecovery && <p className="auth-recovery-copy">
+          {m === 'reset' ? 'Chọn mật khẩu mới có ít nhất 8 ký tự cho tài khoản của bạn.'
+            : 'Nhập email của bạn để nhận liên kết đặt lại mật khẩu.'}
+        </p>}
+        {m !== 'reset' && <div className="auth-field">
+          <label htmlFor={`auth-email${suffix}`}>Email</label>
+          <div className={`auth-input-wrap ${errors.email ? 'has-error' : ''}`}>
+            <Mail size={18} className="auth-input-icon" aria-hidden="true" />
+            <input ref={inactive ? undefined : emailRef} id={`auth-email${suffix}`} name="email" type="email"
+              placeholder="example@email.com" value={email} required autoComplete="email"
+              autoCapitalize="none" spellCheck={false} disabled={busy}
+              aria-invalid={Boolean(errors.email)} aria-describedby={`auth-email-error${suffix}`}
+              onBlur={() => setErrors((current) => ({ ...current, email: email ? validateEmail() : current.email }))}
+              onChange={(event) => { setEmail(event.target.value); setErrors((current) => ({ ...current, email: undefined })); setNotice(null); }} />
+          </div>
+          <p className="auth-field-error" id={`auth-email-error${suffix}`} aria-live="polite">
+            {errors.email && <><AlertCircle size={13} aria-hidden="true" />{errors.email}</>}
+          </p>
+        </div>}
+        {m !== 'forgot' && <div className="auth-field">
+          <div className="auth-label-row">
+            <label htmlFor={`auth-password${suffix}`}>{m === 'reset' ? 'Mật khẩu mới' : 'Mật khẩu'}</label>
+            {m === 'login' && <button type="button" className="auth-text-link" disabled={busy}
+              onClick={() => changeMode('forgot')}>Quên mật khẩu?</button>}
+          </div>
+          <div className={`auth-input-wrap ${errors.password ? 'has-error' : ''}`}>
+            <Lock size={18} className="auth-input-icon" aria-hidden="true" />
+            <input ref={inactive ? undefined : passwordRef} id={`auth-password${suffix}`} name="password" required
+              type={showPassword ? 'text' : 'password'}
+              placeholder={mIsSignUp || m === 'reset' ? 'Ít nhất 8 ký tự' : 'Nhập mật khẩu của bạn'}
+              value={password} disabled={busy}
+              autoComplete={mIsSignUp || m === 'reset' ? 'new-password' : 'current-password'}
+              aria-invalid={Boolean(errors.password)} aria-describedby={`auth-password-error${suffix}`}
+              onBlur={() => setErrors((current) => ({ ...current, password: password ? validatePassword() : current.password }))}
+              onChange={(event) => { setPassword(event.target.value); setErrors((current) => ({ ...current, password: undefined })); setNotice(null); }} />
+            <button type="button" className="auth-password-toggle" disabled={busy} tabIndex={inactive ? -1 : undefined}
+              onClick={() => setShowPassword((value) => !value)} aria-pressed={showPassword}
+              aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}>
+              {showPassword ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}
+            </button>
+          </div>
+          <p className="auth-field-error" id={`auth-password-error${suffix}`} aria-live="polite">
+            {errors.password && <><AlertCircle size={13} aria-hidden="true" />{errors.password}</>}
+          </p>
+          {mIsSignUp && password.length > 0 && (
+            <div className="pw-meter" aria-hidden="true">
+              {[0, 1, 2, 3].map((i) => (
+                <i key={i} className={i < pwScore(password) ? `on s${pwScore(password)}` : ''} />
+              ))}
+              <span>{pwLabel}</span>
+            </div>
+          )}
+        </div>}
+        {mIsSignUp && <div className="auth-field">
+          <label htmlFor={`auth-confirm${suffix}`}>Nhập lại mật khẩu</label>
+          <div className={`auth-input-wrap ${errors.confirm ? 'has-error' : ''}`}>
+            <Lock size={18} className="auth-input-icon" aria-hidden="true" />
+            <input ref={inactive ? undefined : confirmRef} id={`auth-confirm${suffix}`} name="confirm" required
+              type={showPassword ? 'text' : 'password'}
+              placeholder="Nhập lại đúng mật khẩu trên"
+              value={confirm} disabled={busy} autoComplete="new-password"
+              aria-invalid={Boolean(errors.confirm)} aria-describedby={`auth-confirm-error${suffix}`}
+              onBlur={() => setErrors((current) => ({ ...current, confirm: confirm ? validateConfirm() : current.confirm }))}
+              onChange={(event) => { setConfirm(event.target.value); setErrors((current) => ({ ...current, confirm: undefined })); setNotice(null); }} />
+          </div>
+          <p className={errors.confirm ? 'auth-field-error' : confirmMatch ? 'auth-field-ok' : 'auth-field-error'} id={`auth-confirm-error${suffix}`} aria-live="polite">
+            {errors.confirm
+              ? <><AlertCircle size={13} aria-hidden="true" />{errors.confirm}</>
+              : confirmMatch ? <><Check size={13} aria-hidden="true" />Đã khớp</> : null}
+          </p>
+        </div>}
+      </div>
+    );
+  };
+
   const primaryText = mode === 'forgot' ? 'GỬI LIÊN KẾT KHÔI PHỤC'
     : mode === 'reset' ? 'LƯU MẬT KHẨU MỚI' : isSignUp ? 'ĐĂNG KÝ' : 'ĐĂNG NHẬP';
   const pendingText = mode === 'forgot' ? 'ĐANG GỬI...'
@@ -252,6 +416,26 @@ export default function AuthView({ onAuthSuccess, passwordRecovery = false }: {
 
   return (
     <main className="auth-page">
+      <aside className="auth-hero">
+        <div className="auth-hero-glow" aria-hidden="true" />
+        <span className="auth-hero-badge"><Activity size={18} aria-hidden="true" />GYM PROGRESSION</span>
+        <h2>Mỗi buổi tập đều <span>tiến bộ.</span></h2>
+        <p>Giáo án tự tăng tạ theo sức của bạn. Việc của bạn chỉ là đến phòng và tập.</p>
+        <ul>
+          <li>
+            <span><TrendingUp size={20} aria-hidden="true" /></span>
+            <div><b>Tăng tạ tự động</b><i>Đủ reps thì lên tạ, đuối thì giữ nguyên — khỏi đoán.</i></div>
+          </li>
+          <li>
+            <span><Weight size={20} aria-hidden="true" /></span>
+            <div><b>Nhắc nghỉ đúng giờ</b><i>Đồng hồ nghỉ từng bài, rung máy khi hết giờ.</i></div>
+          </li>
+          <li>
+            <span><Dumbbell size={20} aria-hidden="true" /></span>
+            <div><b>Lịch sử rõ ràng</b><i>Heatmap chăm chỉ và tiến trình từng bài tập.</i></div>
+          </li>
+        </ul>
+      </aside>
       <div className="auth-shell">
         <header className="auth-brand">
           <div className="auth-brand-row">
@@ -259,8 +443,36 @@ export default function AuthView({ onAuthSuccess, passwordRecovery = false }: {
             <div className="auth-mark" aria-hidden="true"><Activity size={23} strokeWidth={2} /></div>
           </div>
           <p><TrendingUp size={15} aria-hidden="true" />Tập khoa học. Tiến bộ mỗi ngày.</p>
+          <div className="auth-trust" aria-label="Tính năng chính">
+            <span>Tăng tạ tự động</span>
+            <span>Nhắc nghỉ đúng giờ</span>
+            <span>Lịch sử buổi tập</span>
+          </div>
         </header>
 
+        {showSuccess ? (
+          <div className="auth-success">
+            <div className="auth-success-icon" aria-hidden="true"><Check size={34} strokeWidth={3} /></div>
+            <p className="auth-success-kicker">Đăng ký thành công</p>
+            <h2>Mở mail để xác nhận</h2>
+            <p className="auth-success-copy">
+              Đã gửi liên kết xác nhận tới <b>{registeredEmail}</b>.
+              Bấm vào liên kết trong mail rồi quay lại đây đăng nhập.
+            </p>
+            <button type="button" className="auth-primary" disabled={busy || resendIn > 0} onClick={handleResend}>
+              {googleLoading && <Loader2 size={19} className="auth-spinner" aria-hidden="true" />}
+              <span>{resendIn > 0 ? `GỬI LẠI SAU ${resendIn}S` : 'GỬI LẠI EMAIL'}</span>
+              {!(busy || resendIn > 0) && <ArrowRight size={19} aria-hidden="true" />}
+            </button>
+            <p className="auth-footer">
+              Đã xác nhận xong?{' '}
+              <button type="button" className="auth-text-link" disabled={busy}
+                onClick={() => { setRegisteredEmail(null); changeMode('login'); }}>
+                Đăng nhập ngay
+              </button>
+            </p>
+          </div>
+        ) : (<>
         {isRecovery ? (
           <div className="auth-recovery-heading">
             <button type="button" className="auth-back" aria-label="Quay lại đăng nhập" disabled={busy}
@@ -286,52 +498,15 @@ export default function AuthView({ onAuthSuccess, passwordRecovery = false }: {
         <div id="auth-panel" role={isRecovery ? undefined : 'tabpanel'}
           aria-labelledby={isRecovery ? undefined : `auth-tab-${mode}`}>
           <form onSubmit={handleAuth} noValidate aria-busy={loading}>
-            <div className="auth-fields" key={mode}>
-              {isRecovery && <p className="auth-recovery-copy">
-                {mode === 'reset' ? 'Chọn mật khẩu mới có ít nhất 8 ký tự cho tài khoản của bạn.'
-                  : 'Nhập email của bạn để nhận liên kết đặt lại mật khẩu.'}
-              </p>}
-              {mode !== 'reset' && <div className="auth-field">
-                <label htmlFor="auth-email">Email</label>
-                <div className={`auth-input-wrap ${errors.email ? 'has-error' : ''}`}>
-                  <Mail size={18} className="auth-input-icon" aria-hidden="true" />
-                  <input ref={emailRef} id="auth-email" name="email" type="email"
-                    placeholder="example@email.com" value={email} required autoComplete="email"
-                    autoCapitalize="none" spellCheck={false} disabled={busy}
-                    aria-invalid={Boolean(errors.email)} aria-describedby="auth-email-error"
-                    onBlur={() => setErrors((current) => ({ ...current, email: email ? validateEmail() : current.email }))}
-                    onChange={(event) => { setEmail(event.target.value); setErrors((current) => ({ ...current, email: undefined })); setNotice(null); }} />
-                </div>
-                <p className="auth-field-error" id="auth-email-error" aria-live="polite">
-                  {errors.email && <><AlertCircle size={13} aria-hidden="true" />{errors.email}</>}
-                </p>
-              </div>}
-              {mode !== 'forgot' && <div className="auth-field">
-                <div className="auth-label-row">
-                  <label htmlFor="auth-password">{mode === 'reset' ? 'Mật khẩu mới' : 'Mật khẩu'}</label>
-                  {mode === 'login' && <button type="button" className="auth-text-link" disabled={busy}
-                    onClick={() => changeMode('forgot')}>Quên mật khẩu?</button>}
-                </div>
-                <div className={`auth-input-wrap ${errors.password ? 'has-error' : ''}`}>
-                  <Lock size={18} className="auth-input-icon" aria-hidden="true" />
-                  <input ref={passwordRef} id="auth-password" name="password" required
-                    type={showPassword ? 'text' : 'password'}
-                    placeholder={isSignUp || mode === 'reset' ? 'Ít nhất 8 ký tự' : 'Nhập mật khẩu của bạn'}
-                    value={password} disabled={busy}
-                    autoComplete={isSignUp || mode === 'reset' ? 'new-password' : 'current-password'}
-                    aria-invalid={Boolean(errors.password)} aria-describedby="auth-password-error"
-                    onBlur={() => setErrors((current) => ({ ...current, password: password ? validatePassword() : current.password }))}
-                    onChange={(event) => { setPassword(event.target.value); setErrors((current) => ({ ...current, password: undefined })); setNotice(null); }} />
-                  <button type="button" className="auth-password-toggle" disabled={busy}
-                    onClick={() => setShowPassword((value) => !value)} aria-pressed={showPassword}
-                    aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}>
-                    {showPassword ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}
-                  </button>
-                </div>
-                <p className="auth-field-error" id="auth-password-error" aria-live="polite">
-                  {errors.password && <><AlertCircle size={13} aria-hidden="true" />{errors.password}</>}
-                </p>
-              </div>}
+            <div ref={panelsRef} className="auth-panels" data-mode={mode}>
+              <div className="auth-track">
+                {(['login', 'register', 'forgot', 'reset'] as const).map((m) => (
+                  <div key={m} className="auth-panel" data-active={m === mode}
+                    aria-hidden={m !== mode} inert={m !== mode}>
+                    {renderFields(m, m !== mode)}
+                  </div>
+                ))}
+              </div>
             </div>
             {!isRecovery && <div className="auth-options">
               <label className="auth-remember">
@@ -343,7 +518,7 @@ export default function AuthView({ onAuthSuccess, passwordRecovery = false }: {
             </div>}
             <button type="submit" className="auth-primary" disabled={busy}>
               {loading && <Loader2 size={19} className="auth-spinner" aria-hidden="true" />}
-              <span>{loading ? pendingText : primaryText}</span>
+              <span key={loading ? pendingText : primaryText}>{loading ? pendingText : primaryText}</span>
               {!loading && <ArrowRight size={19} aria-hidden="true" />}
             </button>
           </form>
@@ -368,6 +543,7 @@ export default function AuthView({ onAuthSuccess, passwordRecovery = false }: {
             </button>
           </p>
         </>}
+        </>)}
         <div className={`auth-notice ${notice?.success ? 'is-success' : ''}`} role="status" aria-live="polite" aria-atomic="true">
           {notice && <>{notice.success ? <Check size={16} aria-hidden="true" /> : <AlertCircle size={16} aria-hidden="true" />}<span>{notice.text}</span></>}
         </div>
